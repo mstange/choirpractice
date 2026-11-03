@@ -269,8 +269,10 @@
 
 <style>
 	/* Rows are sized in units of --u, which is 1vh unless that would make the rows overflow the
-	   stage. Then everything shrinks to fit. */
+	   stage. Then everything shrinks to fit. On narrow screens each part's name is above its lines,
+	   in a row of --label-h. */
 	.stage {
+		--label-h: 0px;
 		--dominant-size: 6.2;
 		--dominant-lines: 2.6;
 		--ball-room: 0.8;
@@ -294,7 +296,7 @@
 	.row {
 		--u: min(
 			1vh,
-			100cqh /
+			(100cqh - (var(--dominant-rows) + var(--other-rows)) * var(--label-h)) /
 				(
 					var(--dominant-rows) * var(--dominant-size) * (var(--dominant-lines) + var(--ball-room)) +
 						var(--other-rows) * var(--other-size) * var(--other-lines) +
@@ -306,7 +308,7 @@
 		display: grid;
 		grid-template-columns: 7em 1fr;
 		align-items: center;
-		height: calc(var(--size) * var(--other-lines));
+		height: calc(var(--label-h) + var(--size) * var(--other-lines));
 		transition:
 			height 0.4s,
 			opacity 0.4s;
@@ -318,7 +320,7 @@
 	/* Dominant rows get extra room above the lines for the bouncing ball. */
 	.row.dominant {
 		--size: calc(var(--dominant-size) * var(--u));
-		height: calc(var(--size) * (var(--dominant-lines) + var(--ball-room)));
+		height: calc(var(--label-h) + var(--size) * (var(--dominant-lines) + var(--ball-room)));
 		opacity: 1;
 	}
 	.row.dominant .label {
@@ -326,6 +328,28 @@
 	}
 	.row.dominant .line {
 		top: calc(50% + var(--size) * var(--ball-room) / 2);
+	}
+
+	@media (max-width: 700px) {
+		.stage {
+			--label-h: 16px;
+		}
+		.row {
+			grid-template-columns: 1fr;
+			grid-template-rows: var(--label-h) 1fr;
+			align-items: stretch;
+		}
+		.row.dominant .label {
+			margin-top: 0;
+		}
+		.label {
+			align-self: end;
+			font-size: 10px;
+			padding-bottom: 3px;
+		}
+		.label::after {
+			height: 2px;
+		}
 	}
 
 	.label {

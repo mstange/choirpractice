@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { splitLines, startsWord, type Line } from './lyrics.ts';
+	import { splitLines, startsWord, type Fits, type Line } from './lyrics.ts';
 	import type { Syllable, Voice } from './types.ts';
 
 	let {
@@ -52,8 +52,8 @@
 
 	type Row = ReturnType<typeof makeRow>;
 
-	function makeRow(v: Voice) {
-		const lines = splitLines(v.syllables);
+	function makeRow(v: Voice, fits: Fits, fit: (text: string) => number) {
+		const lines = splitLines(v.syllables, fits).map((l) => ({ ...l, fit: fit(l.text) }));
 		// The lines hold all syllables in order, so lands[k] is v.syllables[k].
 		const lands: Landing[] = lines.flatMap((l, line) =>
 			l.sylls.map((s, i) => ({ t: s.t0, line, i }))
@@ -78,7 +78,47 @@
 		return { name: v.name, lines, lands, switches, holds, pulses };
 	}
 
-	const rows = $derived(voices.map(makeRow));
+	// Lines are split to fit the width at the size of a single selected part's lyrics, which is the
+	// largest the lyrics get, so that they don't change with the selection. A word too long for a
+	// line on its own is shrunk to fit.
+	let room: { width: number; size: number } | null = $state(null);
+	const ctx = document.createElement('canvas').getContext('2d')!;
+	const rows = $derived.by(() => {
+		if (!room) return [];
+		const { width, size } = room;
+		const font = getComputedStyle(document.documentElement).getPropertyValue('--lyric-font');
+		ctx.font = `500 ${size}px ${font}`;
+		const measure = (text: string) => ctx.measureText(text).width;
+		return voices.map((v) =>
+			makeRow(
+				v,
+				(text) => measure(text) <= width,
+				(text) => Math.min(1, width / measure(text))
+			)
+		);
+	});
+
+	// Measures the room for the lines in a hidden row, right away at first and then once resizing
+	// has settled.
+	function measureRoom(probe: HTMLElement) {
+		const lines = probe.querySelector('.lines')!;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const update = () => {
+			const r = { width: lines.clientWidth, size: probe.getBoundingClientRect().height };
+			if (r.width !== room?.width || r.size !== room?.size) room = r;
+		};
+		const observer = new ResizeObserver(() => {
+			if (!room) update();
+			clearTimeout(timer);
+			timer = setTimeout(update, 200);
+		});
+		observer.observe(probe);
+		observer.observe(lines);
+		return () => {
+			observer.disconnect();
+			clearTimeout(timer);
+		};
+	}
 	const dominantRows = $derived(voices.filter((v) => selected.has(v.name)).length);
 
 	const currentLine = (r: Row, t: number) => r.switches.findLastIndex((s) => s <= t);
@@ -252,6 +292,7 @@
 						class:current={i === cur}
 						class:future={i > cur}
 						class:next={i === cur + 1}
+						style:--fit={l.fit}
 					>
 						{@render line(l.sylls, lineTime(i, cur, t))}
 					</div>
@@ -265,17 +306,30 @@
 			{/if}
 		</div>
 	{/each}
+	<div
+		class="row probe"
+		aria-hidden="true"
+		style:--dominant-rows={1}
+		style:--other-rows={voices.length - 1}
+		{@attach measureRoom}
+	>
+		<div class="label"></div>
+		<div class="lines"></div>
+	</div>
 </div>
 
 <style>
 	/* Rows are sized in units of --u, which is 1vh unless that would make the rows overflow the
 	   stage. Then everything shrinks to fit. On narrow screens each part's name is above its lines,
 	   in a row of --label-h. */
-	.stage {
-		--label-h: 0px;
+	.stage,
+	.row.probe {
 		--dominant-size: 6.2;
 		--dominant-lines: 2.6;
 		--ball-room: 0.8;
+	}
+	.stage {
+		--label-h: 0px;
 		--other-size: 3.2;
 		--other-lines: 1.9;
 		--gap: 1.2;
@@ -284,6 +338,7 @@
 		flex-direction: column;
 		justify-content: center;
 		min-height: 0;
+		position: relative;
 		container-type: size;
 	}
 	.stage.multi {
@@ -352,6 +407,14 @@
 		}
 	}
 
+	.row.probe {
+		position: absolute;
+		inset-inline: 0;
+		height: calc(var(--dominant-size) * var(--u));
+		visibility: hidden;
+		pointer-events: none;
+	}
+
 	.label {
 		position: relative;
 		color: var(--c);
@@ -384,7 +447,7 @@
 		right: 0;
 		top: 50%;
 		white-space: nowrap;
-		font: 500 var(--size) / 1.1 var(--lyric-font);
+		font: 500 calc(var(--size) * var(--fit)) / 1.1 var(--lyric-font);
 		transform: translateY(-50%);
 		transition:
 			transform 0.45s ease,

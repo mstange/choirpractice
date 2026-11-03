@@ -2,10 +2,11 @@ import type { Syllable } from './types.ts';
 
 const LINE_GAP = 0.5; // seconds of silence that start a new line
 const MERGE_GAP = 2; // fragments separated by shorter rests are joined if they fit on one line
-const MAX_LINE_CHARS = 42;
+const MAX_LINE_CHARS = 42; // even if a longer line would fit, it's harder to read
 
 export interface Line {
 	sylls: Syllable[];
+	text: string;
 	t0: number;
 	t1: number;
 }
@@ -26,11 +27,14 @@ function words(sylls: Syllable[]): Word[] {
 
 const wordText = (w: Word) => w.map((s) => s.text).join('');
 const phraseLength = (ws: Word[]) => ws.reduce((n, w) => n + wordText(w).length + 1, -1);
+const phraseText = (ws: Word[]) => ws.map(wordText).join(' ');
+/** Whether a line's text fits the width available for it. */
+export type Fits = (text: string) => boolean;
 
 // Split an over-long phrase at the word boundary that best combines "close to the middle" with
 // "after punctuation" or "before a capitalized verse start".
-function splitLong(ws: Word[]): Word[][] {
-	if (ws.length < 2 || phraseLength(ws) <= MAX_LINE_CHARS) return [ws];
+function splitLong(ws: Word[], ok: (ws: Word[]) => boolean): Word[][] {
+	if (ws.length < 2 || ok(ws)) return [ws];
 	const total = phraseLength(ws);
 	let best = 1,
 		bestScore = -Infinity,
@@ -44,10 +48,11 @@ function splitLong(ws: Word[]): Word[][] {
 			Math.abs(pos - total / 2);
 		if (score > bestScore) [best, bestScore] = [i, score];
 	}
-	return [...splitLong(ws.slice(0, best)), ...splitLong(ws.slice(best))];
+	return [...splitLong(ws.slice(0, best), ok), ...splitLong(ws.slice(best), ok)];
 }
 
-export function splitLines(sylls: Syllable[]): Line[] {
+export function splitLines(sylls: Syllable[], fits: Fits): Line[] {
+	const ok = (ws: Word[]) => phraseLength(ws) <= MAX_LINE_CHARS && fits(phraseText(ws));
 	const endsSentence = (ws: Word[]) => /[.;!?]$/.test(wordText(ws[ws.length - 1]));
 	const gapBetween = (a: Word[], b: Word[]) => b[0][0].t0 - a[a.length - 1].at(-1)!.t1;
 	// Break at rests and sentence ends, then re-join short fragments separated by brief rests.
@@ -60,17 +65,14 @@ export function splitLines(sylls: Syllable[]): Line[] {
 	const merged: Word[][] = [];
 	for (const p of phrases) {
 		const prev = merged.at(-1);
-		if (
-			prev &&
-			!endsSentence(prev) &&
-			gapBetween(prev, p) < MERGE_GAP &&
-			phraseLength(prev) + 1 + phraseLength(p) <= MAX_LINE_CHARS
-		)
+		if (prev && !endsSentence(prev) && gapBetween(prev, p) < MERGE_GAP && ok([...prev, ...p]))
 			prev.push(...p);
 		else merged.push(p);
 	}
-	return merged.flatMap(splitLong).map((ws) => {
-		const sylls = ws.flat();
-		return { sylls, t0: sylls[0].t0, t1: sylls[sylls.length - 1].t1 };
-	});
+	return merged
+		.flatMap((ws) => splitLong(ws, ok))
+		.map((ws) => {
+			const sylls = ws.flat();
+			return { sylls, text: phraseText(ws), t0: sylls[0].t0, t1: sylls[sylls.length - 1].t1 };
+		});
 }

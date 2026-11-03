@@ -12,7 +12,7 @@
 		type MicTrace
 	} from './canvas.ts';
 	import { assignColors } from './colors.ts';
-	import Lines from './Lines.svelte';
+	import Lyrics from './Lyrics.svelte';
 	import { Mic } from './mic.svelte.ts';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
@@ -32,8 +32,8 @@
 
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const VIEWS: { id: View; label: string }[] = [
-		{ id: 'overlay', label: 'Bars' },
-		{ id: 'lines', label: 'Lines' }
+		{ id: 'pitch', label: 'Pitch' },
+		{ id: 'lyrics', label: 'Lyrics' }
 	];
 	const voiceNames = voices.map((v) => v.name);
 	const colors = assignColors(voices);
@@ -51,7 +51,7 @@
 	]);
 
 	let selected = $state([voiceNames[0]]);
-	let view: View = $state('overlay');
+	let view: View = $state('pitch');
 	let emphasis = $state(0.7);
 	let accompLevels = $state(Object.fromEntries(accompaniment.map((n) => [n, 0.6])));
 	let t = $state(0);
@@ -95,7 +95,7 @@
 			t = mixer.now();
 			if (mixer.playing && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
-			if (view !== 'lines' && barsCanvas)
+			if (view !== 'lyrics' && barsCanvas)
 				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
 			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[selected[0]]);
 			drawTimeline(timelineCanvas, piece, colors, mixer, t);
@@ -240,8 +240,8 @@
 	</header>
 
 	<main class="stage">
-		{#if view === 'lines'}
-			<Lines {voices} {colors} selected={selectedSet} {t} onseek={seek} />
+		{#if view === 'lyrics'}
+			<Lyrics {voices} {colors} selected={selectedSet} {t} onseek={seek} />
 		{:else}
 			<canvas
 				class="bars"
@@ -253,7 +253,7 @@
 	</main>
 
 	<footer>
-		{#if view === 'overlay' && sheet}
+		{#if view === 'pitch' && sheet}
 			<canvas
 				class="sheet"
 				style:height="{sheetHeight}px"

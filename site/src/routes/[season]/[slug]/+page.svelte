@@ -11,5 +11,11 @@
 </script>
 
 {#key data.entry.slug}
-	<Player season={data.season} entry={data.entry} piece={data.piece} pieces={data.pieces} {session} />
+	<Player
+		season={data.season}
+		entry={data.entry}
+		piece={data.piece}
+		pieces={data.pieces}
+		{session}
+	/>
 {/key}

@@ -32,6 +32,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
   - `src/lib/mic.svelte.ts` and `src/lib/pitch.ts`: the microphone and its pitch detection.
   - `src/lib/pieces.ts`: where the season directories are. `vite.config.ts` serves `media/` next to the page for `npm run dev` and `npm run preview`; a deployed page fetches from `VITE_MEDIA_BASE`.
   - Select a piece with `index.html#/<season>/<slug>`. `index.html#/<season>` opens the season's first piece.
+- Formatting: `npm run format` in `site/` formats the page with Prettier, and `uvx ruff format tools` the Python tools.
 
 ## Adding a piece
 

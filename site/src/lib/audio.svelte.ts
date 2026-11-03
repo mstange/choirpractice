@@ -65,7 +65,7 @@ export class Mixer {
 	/** Fetches all chunks of all stems. `dirs` maps part names to chunk directories. */
 	async load(dirs: Record<string, string>, signal: AbortSignal) {
 		const worker = async () => {
-			for (let job; !signal.aborted && (job = this.#nextJob()); ) {
+			for (let job; !signal.aborted && (job = this.#nextJob());) {
 				const [name, k] = job;
 				const res = await fetch(`${dirs[name]}/${k}.mp3`, { signal });
 				if (!res.ok) throw new Error(`${res.url}: ${res.status} ${res.statusText}`);
@@ -138,7 +138,11 @@ export class Mixer {
 		const expected = Math.min(length, start + chunk + pad) - (start - lead);
 		if (decoded.length !== expected)
 			throw new Error(`chunk ${k} of ${name}: ${decoded.length} samples, expected ${expected}`);
-		const buffer = new AudioBuffer({ numberOfChannels: decoded.numberOfChannels, length: len, sampleRate: rate });
+		const buffer = new AudioBuffer({
+			numberOfChannels: decoded.numberOfChannels,
+			length: len,
+			sampleRate: rate
+		});
 		for (let c = 0; c < decoded.numberOfChannels; c++)
 			buffer.copyToChannel(decoded.getChannelData(c).subarray(lead, lead + len), c);
 		this.#chunks[k].set(name, buffer);

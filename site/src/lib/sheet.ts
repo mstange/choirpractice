@@ -100,7 +100,17 @@ export class Sheet {
 				units = TILE / ds;
 			tile = new OffscreenCanvas(TILE, Math.ceil(this.info.height * ds));
 			const g = tile.getContext('2d')!;
-			g.drawImage(this.#img!, k * units, 0, units, this.info.height, 0, 0, TILE, this.info.height * ds);
+			g.drawImage(
+				this.#img!,
+				k * units,
+				0,
+				units,
+				this.info.height,
+				0,
+				0,
+				TILE,
+				this.info.height * ds
+			);
 			g.globalCompositeOperation = 'source-in';
 			g.fillStyle = '#fff';
 			g.fillRect(0, 0, tile.width, tile.height);

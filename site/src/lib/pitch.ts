@@ -34,7 +34,7 @@ export function detectPitch(x: Float32Array, rate: number): number | null {
 	const peaks: number[] = [];
 	let tau = 1;
 	while (tau <= maxLag && nsdf[tau] > 0) tau++;
-	for (; tau <= maxLag; ) {
+	for (; tau <= maxLag;) {
 		while (tau <= maxLag && nsdf[tau] <= 0) tau++;
 		let best = -1;
 		for (; tau <= maxLag && nsdf[tau] > 0; tau++)

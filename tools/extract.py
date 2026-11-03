@@ -7,6 +7,7 @@ unpacked .mscz, whose title frame gives the title and credits. Timing comes from
 MIDI file, so the tempo map (fermatas, ritardandos, ...) matches MuseScore's audio export.
 Score positions are assumed to map 1:1 to MIDI ticks, i.e. the score has no repeats.
 """
+
 import html, json, re, struct, sys
 import xml.etree.ElementTree as ET
 from fractions import Fraction
@@ -33,8 +34,8 @@ def midi_tempo_map(path):
     _, _, ntracks, division = struct.unpack(">IHHH", data[4:14])
     pos, tempos = 14, []
     for _ in range(ntracks):
-        assert data[pos:pos + 4] == b"MTrk"
-        (length,) = struct.unpack(">I", data[pos + 4:pos + 8])
+        assert data[pos : pos + 4] == b"MTrk"
+        (length,) = struct.unpack(">I", data[pos + 4 : pos + 8])
         p, end, tick, status = pos + 8, pos + 8 + length, 0, 0
         while p < end:
             delta, p = varlen(data, p)
@@ -46,7 +47,7 @@ def midi_tempo_map(path):
                 mtype = data[p]
                 ln, p = varlen(data, p + 1)
                 if mtype == 0x51:
-                    tempos.append((tick, int.from_bytes(data[p:p + 3], "big")))
+                    tempos.append((tick, int.from_bytes(data[p : p + 3], "big")))
                 p += ln
             elif status in (0xF0, 0xF7):
                 ln, p = varlen(data, p)
@@ -70,6 +71,7 @@ def time_map(mid_path):
         tick = float(quarters) * division
         t, s, spt = next(seg for seg in reversed(segs) if tick >= seg[0])
         return round(s + (tick - t) * spt, 4)
+
     return to_sec
 
 
@@ -111,15 +113,23 @@ def parse_part(part):
                     events.append((mstart + start, dur, None, None, bar, bool(slurs)))
                     continue
                 pitch = el.find("pitch")
-                midi = (int(pitch.findtext("octave")) + 1) * 12 + STEPS[pitch.findtext("step")] + \
-                    int(float(pitch.findtext("alter") or 0))
+                midi = (
+                    (int(pitch.findtext("octave")) + 1) * 12
+                    + STEPS[pitch.findtext("step")]
+                    + int(float(pitch.findtext("alter") or 0))
+                )
                 tied = any(t.get("type") == "start" for t in el.findall("tie"))
                 if is_chord:
                     events[-1][3].append((midi, tied))
                 else:
-                    lyrics = [(int(l.get("number", "1")), l.findtext("syllabic") or "single",
-                               "".join("".join(t.itertext()) for t in l.findall("text")).strip())
-                              for l in el.findall("lyric")]
+                    lyrics = [
+                        (
+                            int(l.get("number", "1")),
+                            l.findtext("syllabic") or "single",
+                            "".join("".join(t.itertext()) for t in l.findall("text")).strip(),
+                        )
+                        for l in el.findall("lyric")
+                    ]
                     events.append((mstart + start, dur, lyrics, [(midi, tied)], bar, bool(slurs)))
                 for s in el.findall("notations/slur"):
                     (slurs.add if s.get("type") == "start" else slurs.discard)(s.get("number", "1"))
@@ -134,7 +144,9 @@ def credits(root, mscx):
     defaults, is the fallback."""
     found = {}
     vbox = re.search(r"<VBox>.*?</VBox>", mscx, re.S)
-    for style, text in re.findall(r"<Text>.*?<style>(.*?)</style>.*?<text>(.*?)</text>", vbox[0] if vbox else "", re.S):
+    for style, text in re.findall(
+        r"<Text>.*?<style>(.*?)</style>.*?<text>(.*?)</text>", vbox[0] if vbox else "", re.S
+    ):
         words = html.unescape(re.sub(r"<[^>]*>", "", text)).strip()
         if words and words not in PLACEHOLDERS:
             found.setdefault(style.lower(), words)
@@ -143,7 +155,11 @@ def credits(root, mscx):
             found.setdefault(c.get("type"), c.text.strip())
     work_title = (root.findtext("work/work-title") or "").strip()
     title = found.get("title") or (work_title not in PLACEHOLDERS and work_title) or "Untitled"
-    by = " · ".join(filter(None, [found.get("composer"), found.get("lyricist") and f"text by {found['lyricist']}"]))
+    by = " · ".join(
+        filter(
+            None, [found.get("composer"), found.get("lyricist") and f"text by {found['lyricist']}"]
+        )
+    )
     return title, found.get("subtitle", ""), by
 
 
@@ -181,7 +197,7 @@ def main():
             if lyr:
                 # A syllable lasts until the next rest or next lyric-bearing note.
                 end = start + dur
-                for s2, d2, l2, *_ in events[i + 1:]:
+                for s2, d2, l2, *_ in events[i + 1 :]:
                     if l2 is None or l2:
                         break
                     end = s2 + d2
@@ -190,14 +206,22 @@ def main():
                 if verse != 1:
                     warn(bar, f"'{text}' is on verse line {verse}")
                 if prev[0] in ("begin", "middle") and syllabic in ("begin", "single"):
-                    warn(bar, f"'{prev[1]}' ({prev[0]}) is followed by '{text}' ({syllabic}), leaving the word open")
+                    warn(
+                        bar,
+                        f"'{prev[1]}' ({prev[0]}) is followed by '{text}' ({syllabic}), leaving the word open",
+                    )
                 elif prev[0] in ("end", "single") and syllabic in ("middle", "end"):
-                    warn(bar, f"'{prev[1]}' ({prev[0]}) is followed by '{text}' ({syllabic}), a word without a beginning")
+                    warn(
+                        bar,
+                        f"'{prev[1]}' ({prev[0]}) is followed by '{text}' ({syllabic}), a word without a beginning",
+                    )
                 if in_slur:
                     warn(bar, f"'{text}' is inside a slur that started on an earlier note")
                 prev = (syllabic, text)
                 cur_syl = len(sylls)
-                sylls.append({"t0": to_sec(start), "t1": to_sec(end), "text": text, "syl": syllabic[0]})
+                sylls.append(
+                    {"t0": to_sec(start), "t1": to_sec(end), "text": text, "syl": syllabic[0]}
+                )
             elif cur_syl < 0:
                 warn(bar, f"note after a rest has no lyric (previous lyric '{prev[1]}')")
             ties = {}
@@ -215,10 +239,21 @@ def main():
                 if tied:
                     ties[pitch] = note
             open_ties = ties
-        result["voices"].append({"name": name, "syllables": sylls, "notes": [
-            {"t0": to_sec(n["start"]), "t1": to_sec(n["end"]), "p": n["p"], "s": n["s"]} for n in notes]})
-        print(f"{name}: {len(sylls)} syllables, {len(notes)} notes, unsung notes: "
-              f"{sum(n['s'] < 0 for n in notes)}, lyrics on tied notes: {lyric_on_tie}", file=sys.stderr)
+        result["voices"].append(
+            {
+                "name": name,
+                "syllables": sylls,
+                "notes": [
+                    {"t0": to_sec(n["start"]), "t1": to_sec(n["end"]), "p": n["p"], "s": n["s"]}
+                    for n in notes
+                ],
+            }
+        )
+        print(
+            f"{name}: {len(sylls)} syllables, {len(notes)} notes, unsung notes: "
+            f"{sum(n['s'] < 0 for n in notes)}, lyrics on tied notes: {lyric_on_tie}",
+            file=sys.stderr,
+        )
         for w in warnings:
             print(w, file=sys.stderr)
     json.dump(result, open(out, "w"), indent=0)

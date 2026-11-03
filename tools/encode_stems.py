@@ -7,6 +7,7 @@ samples [k*CHUNK, (k+1)*CHUNK), plus PAD samples of the neighbouring chunks on e
 frames near the edges of an encoding are noisy, and the padding keeps those frames out of the
 stitched result. Adds an "audio" entry describing the chunking to piece.json.
 """
+
 import array, concurrent.futures, json, os, pathlib, shutil, subprocess, sys, wave
 
 RATE = 44100
@@ -26,9 +27,21 @@ def subtract_baseline(name):
     # 16-bit output is plenty for mp3 input and lets the wave module read the length. Mono halves
     # the download and the page's memory; the scores' panning isn't worth that.
     dst = work / f"{name}.stem.wav"
-    run("-i", work / f"{name}.wav", "-i", work / "baseline.wav",
-        "-filter_complex", "[1]volume=-1[neg];[0][neg]amix=inputs=2:normalize=0",
-        "-ar", str(RATE), "-ac", "1", "-c:a", "pcm_s16le", dst)
+    run(
+        "-i",
+        work / f"{name}.wav",
+        "-i",
+        work / "baseline.wav",
+        "-filter_complex",
+        "[1]volume=-1[neg];[0][neg]amix=inputs=2:normalize=0",
+        "-ar",
+        str(RATE),
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        dst,
+    )
     with wave.open(str(dst)) as w:
         samples = array.array("h", w.readframes(w.getnframes()))
     # A silent stem means the part wasn't isolated: every variant rendered the same mix.
@@ -38,8 +51,17 @@ def subtract_baseline(name):
 
 def encode_chunk(name, k, length):
     start, end = max(0, k * CHUNK - PAD), min(length, (k + 1) * CHUNK + PAD)
-    run("-i", work / f"{name}.stem.wav", "-af", f"atrim=start_sample={start}:end_sample={end}",
-        "-c:a", "libmp3lame", "-q:a", "2", out / "audio" / name / f"{k}.mp3")
+    run(
+        "-i",
+        work / f"{name}.stem.wav",
+        "-af",
+        f"atrim=start_sample={start}:end_sample={end}",
+        "-c:a",
+        "libmp3lame",
+        "-q:a",
+        "2",
+        out / "audio" / name / f"{k}.mp3",
+    )
 
 
 names = [pathlib.Path(p["file"]).name for p in piece["parts"]]

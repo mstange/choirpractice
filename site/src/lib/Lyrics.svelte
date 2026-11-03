@@ -222,8 +222,7 @@
 		return () => cancelAnimationFrame(raf);
 	};
 
-	const progress = (s: Syllable, t: number) =>
-		Math.min(1, Math.max(0, (t - s.t0) / (s.t1 - s.t0)));
+	const progress = (s: Syllable, t: number) => Math.min(1, Math.max(0, (t - s.t0) / (s.t1 - s.t0)));
 </script>
 
 {#snippet line(sylls: Syllable[], t: number)}

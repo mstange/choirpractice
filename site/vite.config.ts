@@ -10,7 +10,11 @@ import { defineConfig, type Plugin } from 'vite';
  */
 function media(): Plugin {
 	const serve = sirv('../media', { dev: true });
-	const use = ({ middlewares }: { middlewares: { use: (path: string, f: typeof serve) => void } }) => {
+	const use = ({
+		middlewares
+	}: {
+		middlewares: { use: (path: string, f: typeof serve) => void };
+	}) => {
 		middlewares.use('/media', serve);
 	};
 	return { name: 'media', configureServer: use, configurePreviewServer: use };

@@ -378,8 +378,8 @@
 		</div>
 
 		<div class="hint">
-			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove ·
-			0: all parts · V: switch view · M: microphone · click a note or syllable to jump there
+			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
+			all parts · V: switch view · M: microphone · click a note or syllable to jump there
 		</div>
 	</footer>
 </div>

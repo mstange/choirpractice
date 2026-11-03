@@ -5,15 +5,22 @@ Prints "<variant .mscz>\t<name>" per variant. Names are the stem names from piec
 (which follow the score's part order), and "baseline" for the all-muted variant: MuseScore renders a
 short sound at the very start even with every part muted, which must be subtracted from each stem.
 """
+
 import json, pathlib, re, shutil, sys
 
-src, piece, work = pathlib.Path(sys.argv[1]), json.load(open(sys.argv[2])), pathlib.Path(sys.argv[3])
+src, piece, work = (
+    pathlib.Path(sys.argv[1]),
+    json.load(open(sys.argv[2])),
+    pathlib.Path(sys.argv[3]),
+)
 mscx_path = next(src.glob("*.mscx"))
 mscx = mscx_path.read_text()
 part_xml = re.findall(r"<Part[ >].*?</Part>", mscx, re.S)
 assert len(part_xml) == len(piece["parts"]), "part count differs between .mscx and MusicXML"
 
-variants = [(i, pathlib.Path(p["file"]).stem) for i, p in enumerate(piece["parts"])] + [(None, "baseline")]
+variants = [(i, pathlib.Path(p["file"]).stem) for i, p in enumerate(piece["parts"])] + [
+    (None, "baseline")
+]
 for keep, name in variants:
     variant = work / f"variant-{name}"
     shutil.copytree(src, variant)
@@ -25,7 +32,9 @@ for keep, name in variants:
         # have no track; MuseScore fills in the rest of a track from the part and instrument ids.
         tracks = {t["partId"] for t in settings["tracks"]}
         for p in part_xml:
-            part_id, instrument_id = re.search(r'<Part id="(\d+)">.*?<Instrument id="([^"]*)"', p, re.S).groups()
+            part_id, instrument_id = re.search(
+                r'<Part id="(\d+)">.*?<Instrument id="([^"]*)"', p, re.S
+            ).groups()
             if part_id not in tracks:
                 settings["tracks"].append({"partId": part_id, "instrumentId": instrument_id})
         for track in settings["tracks"]:

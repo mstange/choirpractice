@@ -62,7 +62,10 @@
 	const mic = session.mic;
 	// svelte-ignore state_referenced_locally
 	session.enter(voiceNames);
-	let accompLevels = $state(Object.fromEntries(accompaniment.map((n) => [n, 0.6])));
+	let accompLevels = $state(
+		// svelte-ignore state_referenced_locally
+		Object.fromEntries(accompaniment.map((n) => [n, entry.levels?.[n] ?? 0.6]))
+	);
 	let t = $state(0);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;

@@ -71,6 +71,8 @@ export interface PieceEntry {
 	slug: string;
 	label: string;
 	hues?: [string, number][];
+	/** Initial volume of accompaniment parts, by part name, instead of 0.6. */
+	levels?: Record<string, number>;
 }
 
 export type View = 'pitch' | 'lyrics';

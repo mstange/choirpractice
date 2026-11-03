@@ -9,7 +9,8 @@ export class Session {
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
 	selected: string[] = $state([]);
 	#voices: string[] = [];
-	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0));
+	// The default worked on a MacBook with its built-in mic.
+	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0.18));
 
 	/**
 	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows

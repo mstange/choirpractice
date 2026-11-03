@@ -59,6 +59,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
    { "slug": "my-slug", "label": "Menu label", "hues": [["", 215], ["Word", 30]] }
    ```
    `hues` is optional. Each `[word, hue]` changes the background hue at the first syllable of the first vocal part that starts with `word`; an empty word matches from the beginning.
+   `levels` is optional too: `{ "Violoncello": 0.2 }` starts that accompaniment part's volume slider at 0.2 instead of 0.6.
 4. **Serve and look.** Either run the dev server, which reloads on changes:
    ```sh
    cd site && npm run dev
@@ -119,7 +120,7 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
   - The strip is sized so that staff lines are 7 px apart (`engrave.py` records each engraving's staff line distance), but takes at most a third of the window.
   - The page draws the SVG in white tiles of 1024 device pixels at the current scale and keeps only the tiles in view.
 - **Microphone:** the mic button (or M) draws the pitch you sing in the Pitch view: a white marker on the "now" line, and a trail behind it while playing. Seeking back and singing again replaces the trail from there on.
-  - **Delay:** the trail is drawn earlier than recorded by half the analysis window plus the Mix panel's Mic delay. Browsers don't report the mic's input latency (Firefox has neither `getSupportedConstraints().latency` nor a `latency` track setting), and it depends on the hardware, so the user sets it by lining up the trail with the bars after singing; moving the slider shifts the trail already sung. It is kept in `localStorage`. The playback position accounts for the context's `baseLatency` plus `outputLatency`.
+  - **Delay:** the trail is drawn earlier than recorded by half the analysis window plus the Mix panel's Mic delay (180 ms by default, which suits a MacBook's built-in mic). Browsers don't report the mic's input latency (Firefox has neither `getSupportedConstraints().latency` nor a `latency` track setting), and it depends on the hardware, so the user sets it by lining up the trail with the bars after singing; moving the slider shifts the trail already sung. It is kept in `localStorage`. The playback position accounts for the context's `baseLatency` plus `outputLatency`.
   - The pitch comes from the McLeod pitch method (`pitch.ts`), run on the latest 2048 mic samples once per animation frame (about 1.3 ms at 48 kHz). The resonator bank from [jhartquist/resonators](https://github.com/jhartquist/resonators) was considered, but it only yields a spectrum; picking a fundamental from that is prone to octave errors.
   - Frames count as unpitched below an NSDF clarity of 0.8 or below about -50 dBFS. On MuseScore's soundfont choir stems, about 96% of the pitched frames are within a quarter tone of the score; with a real voice the thresholds are untested.
   - Noise suppression is off (it treats sustained tones as noise) and echo cancellation is on, but headphones are still the reliable way to keep the playback out of the mic.

@@ -14,7 +14,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 - `media/<season>/`: the data of a season's pieces. It is not checked in (see `.gitignore`), except for `media/demo/`.
   - `pieces.json` lists the pieces offered in the piece menu.
   - `<slug>/` holds the data of one piece, written by `tools/build.sh`.
-  - `media/demo/` is a season with one piece, Frère Jacques as a round in four parts, so that the page works without a licensed score. Its score is `media/demo/frere-jacques.mscz`; rebuild it with `tools/build.sh media/demo/frere-jacques.mscz demo/frere-jacques`. The page links to it as `#/demo`.
+  - `media/demo/` is a season of public-domain pieces, so that the page works without a licensed score: Frère Jacques as a round in four parts, and Mozart's Ave verum corpus for SATB choir and piano. Their scores are `media/demo/<slug>.mscz`; rebuild one with `tools/build.sh media/demo/<slug>.mscz demo/<slug>`. The page links to them as `#/demo` and `#/demo/ave-verum-corpus`.
 - `tools/build.sh <score.mscz> <season>/<slug>`: the whole pipeline for one score. It writes `media/<season>/<slug>/piece.json`, `media/<season>/<slug>/audio/<part>/<k>.mp3`, the chunks of each part's stem, and `media/<season>/<slug>/engraving/<name>.svg`, the sheet music.
 - `tools/extract.py`: reads MuseScore's MusicXML and MIDI exports and writes `piece.json`, which holds:
   - title, subtitle, credits, from the score's title frame (the MusicXML export leaves it out), or else from its metadata in File › Properties;

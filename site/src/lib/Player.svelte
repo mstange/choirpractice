@@ -478,6 +478,9 @@
 
 	.player {
 		height: 100dvh;
+		/* Nothing may widen the page, such as the lyrics' ball following a syllable off the edge. On a
+		   phone that would make the whole page zoomable and scrollable. */
+		overflow: clip;
 		display: flex;
 		flex-direction: column;
 		background:

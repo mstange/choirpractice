@@ -129,6 +129,7 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
 ## Limitations
 
 - **No repeats.** The timing code assumes score position maps 1:1 to MIDI ticks. A score with repeats or jumps needs the MusicXML and MIDI handled with repeats unrolled (`mscore --unroll-repeats`, untested), or the timing will be wrong after the first repeat.
+- **MuseScore 4 files only.** `engrave.py` sets the engraving style in `score_style.mss`, which MuseScore 3 files don't have (they keep their style in the `.mscx`), so `build.sh` stops on them. Open such a score in MuseScore 4 and save it first.
 - **One voice, one verse.** Only voice 1 of each part's first staff is read. Divisi written as a second voice on the same staff is ignored. Only one verse is shown: the lowest-numbered lyric on each note.
 - **Colors and keys.** Colors are chosen by part name (soprano, alto, tenor, bass, then a second shade for "Alto 2" and similar). Other names get fallback colors. Keyboard part selection covers up to 9 parts.
 - **Overlapping text.** In the Pitch view with several parts selected, lyrics of different parts can overlap; the Lyrics view is clearer for that.

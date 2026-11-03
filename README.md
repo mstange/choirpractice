@@ -3,7 +3,6 @@
 A static web page that plays a MuseScore score as synchronized audio plus a visual display:
 
 - **Bars:** SingStar-style note bars on a shared pitch axis, with the sheet music in a strip below them.
-- **Lanes:** one pitch band per vocal part.
 - **Lines:** karaoke-style lyric lines.
 
 The user picks one or more dominant parts (shift-click adds or removes a part). Those parts are drawn prominently and are louder in the mix: every part is a separate audio stem, mixed live with Web Audio.
@@ -28,7 +27,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 - `tools/check_entries.py`: checks that the audio lines up with the score (see Verifying).
 - `site/`: the page, a SvelteKit app (Svelte 5) built into a single static page with hash routing. Run `npm install` in `site/` once.
   - `src/lib/Player.svelte`: the player UI: controls, part selection, keyboard shortcuts.
-  - `src/lib/Lines.svelte`: the Lines view. `src/lib/canvas.ts` draws the Bars and Lanes views and the timeline, and `src/lib/sheet.ts` the sheet music strip of the Bars view.
+  - `src/lib/Lines.svelte`: the Lines view. `src/lib/canvas.ts` draws the Bars view and the timeline, and `src/lib/sheet.ts` the sheet music strip of the Bars view.
   - `src/lib/audio.svelte.ts`: loading the stem chunks and mixing them with Web Audio.
   - `src/lib/mic.svelte.ts` and `src/lib/pitch.ts`: the microphone and its pitch detection.
   - `src/lib/pieces.ts`: where the season directories are. `vite.config.ts` serves `media/` next to the page for `npm run dev` and `npm run preview`; a deployed page fetches from `VITE_MEDIA_BASE`.
@@ -117,7 +116,7 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
   - Engraved notes aren't spaced in proportion to time, so a continuously scrolling sheet would keep changing speed. Instead the sheet stands still while a cursor moves along it, its position interpolated between the segments. When the cursor passes 80% of the strip, the sheet slides on by 60% of the strip, so some of the music before and after stays visible.
   - The strip is sized so that staff lines are 7 px apart (`engrave.py` records each engraving's staff line distance), but takes at most a third of the window.
   - The page draws the SVG in white tiles of 1024 device pixels at the current scale and keeps only the tiles in view.
-- **Microphone:** the mic button (or M) draws the pitch you sing in the Bars and Lanes views: a white marker on the "now" line, and a trail behind it while playing. In Lanes it goes into the lane of the first selected part. Seeking back and singing again replaces the trail from there on.
+- **Microphone:** the mic button (or M) draws the pitch you sing in the Bars view: a white marker on the "now" line, and a trail behind it while playing. Seeking back and singing again replaces the trail from there on.
   - The pitch comes from the McLeod pitch method (`pitch.ts`), run on the latest 2048 mic samples once per animation frame (about 1.3 ms at 48 kHz). The resonator bank from [jhartquist/resonators](https://github.com/jhartquist/resonators) was considered, but it only yields a spectrum; picking a fundamental from that is prone to octave errors.
   - Frames count as unpitched below an NSDF clarity of 0.8 or below about -50 dBFS. On MuseScore's soundfont choir stems, about 96% of the pitched frames are within a quarter tone of the score; with a real voice the thresholds are untested.
   - Noise suppression is off (it treats sustained tones as noise) and echo cancellation is on, but headphones are still the reliable way to keep the playback out of the mic.
@@ -128,7 +127,7 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
 - **No repeats.** The timing code assumes score position maps 1:1 to MIDI ticks. A score with repeats or jumps needs the MusicXML and MIDI handled with repeats unrolled (`mscore --unroll-repeats`, untested), or the timing will be wrong after the first repeat.
 - **One voice, one verse.** Only voice 1 of each part's first staff is read. Divisi written as a second voice on the same staff is ignored. Only one verse is shown: the lowest-numbered lyric on each note.
 - **Colors and keys.** Colors are chosen by part name (soprano, alto, tenor, bass, then a second shade for "Alto 2" and similar). Other names get fallback colors. Keyboard part selection covers up to 9 parts.
-- **Overlapping text.** In the Bars view with several parts selected, lyrics of different parts can overlap; the Lanes view is clearer for that.
+- **Overlapping text.** In the Bars view with several parts selected, lyrics of different parts can overlap; the Lines view is clearer for that.
 
 ## Local environment notes (this machine)
 

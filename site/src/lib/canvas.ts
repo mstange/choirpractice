@@ -37,85 +37,41 @@ function prepare(c: HTMLCanvasElement) {
 
 interface VoiceLayout {
 	v: Voice;
-	y: (p: number) => number;
 	barH: number;
 	grow: number;
 	outline: boolean;
 	alpha: number;
 	lyrics: boolean;
-	font: number;
 	z: number;
-	lane?: [number, number];
-	grid: { lo: number; hi: number; y: (p: number) => number };
 }
 
-// Vertical layout of the bar view: for each voice, a pitch-to-y mapping plus drawing style.
-function barLayout(
-	voices: Voice[],
-	view: 'overlay' | 'lanes',
-	selected: Set<string>,
-	H: number
-): VoiceLayout[] {
-	const multi = selected.size > 1;
-	const all = selected.size === voices.length;
-	if (view === 'overlay') {
-		const ranges = voices.map((v) => pitchRange(v.notes));
-		const lo = Math.min(...ranges.map((r) => r[0])),
-			hi = Math.max(...ranges.map((r) => r[1]));
-		const top = 34,
-			bottom = H - 34;
-		const step = (bottom - top) / (hi - lo + 2);
-		const y = (p: number) => bottom - (p - lo + 1) * step;
-		const grid = { lo: lo - 1, hi: hi + 1, y };
-		const barH = Math.min(18, step * 0.8);
-		// Voices often sing in unison: selected voices are filled bars on top, and the others are
-		// slightly larger outlines, so they stay visible around them. Selected voices that
-		// coincide simply cover each other.
-		return voices.map((v, i) => {
-			const dom = selected.has(v.name);
-			const grow = dom ? 0 : 6;
-			return {
-				v,
-				y,
-				barH: barH + grow,
-				grow,
-				outline: !dom,
-				alpha: dom ? 1 : 0.8,
-				lyrics: dom,
-				font: multi ? 14 : 20,
-				grid,
-				z: dom ? 1 + i : 0
-			};
-		});
-	}
-	const weights: number[] = voices.map((v) => (!all && selected.has(v.name) ? 1.7 : 1));
-	const total = weights.reduce((a, b) => a + b);
-	let top = 24;
+/** Vertical layout of the bar view: one pitch axis shared by all voices. */
+function pitchAxis(voices: Voice[], H: number) {
+	const ranges = voices.map((v) => pitchRange(v.notes));
+	const lo = Math.min(...ranges.map((r) => r[0])),
+		hi = Math.max(...ranges.map((r) => r[1]));
+	const top = 34,
+		bottom = H - 34;
+	const step = (bottom - top) / (hi - lo + 2);
+	return { lo: lo - 1, hi: hi + 1, step, y: (p: number) => bottom - (p - lo + 1) * step };
+}
+
+// Voices often sing in unison: selected voices are filled bars on top, and the others are slightly
+// larger outlines, so they stay visible around them. Selected voices that coincide simply cover
+// each other.
+function barLayout(voices: Voice[], selected: Set<string>, step: number): VoiceLayout[] {
+	const barH = Math.min(18, step * 0.8);
 	return voices.map((v, i) => {
-		const laneH = ((H - 24) * weights[i]) / total;
-		const [lo, hi] = pitchRange(v.notes);
-		// Padding and lyrics take at most half of the lane, so that crowded lanes still show notes.
-		const shrink = Math.min(1, laneH / 2 / 42);
-		const pad = 8 * shrink,
-			lyricSpace = 26 * shrink;
-		const step = (laneH - pad * 2 - lyricSpace) / (hi - lo + 1);
-		const laneTop = top;
-		const y = (p: number) => laneTop + pad + (hi - p + 0.5) * step;
-		top += laneH;
 		const dom = selected.has(v.name);
-		const font = (dom ? 18 : 15) * shrink;
+		const grow = dom ? 0 : 6;
 		return {
 			v,
-			y,
-			barH: Math.min(18, step * 0.9),
-			grow: 0,
-			outline: false,
-			alpha: dom ? 1 : 0.6,
-			lyrics: font >= 8,
-			font,
-			z: 0,
-			lane: [laneTop, laneH],
-			grid: { lo: lo - 1, hi: hi + 1, y }
+			barH: barH + grow,
+			grow,
+			outline: !dom,
+			alpha: dom ? 1 : 0.8,
+			lyrics: dom,
+			z: dom ? 1 + i : 0
 		};
 	});
 }
@@ -139,7 +95,6 @@ export function drawBars(
 	data: PieceData,
 	colors: Record<string, string>,
 	t: number,
-	view: 'overlay' | 'lanes',
 	selected: Set<string>,
 	mic: MicTrace | null
 ) {
@@ -150,7 +105,10 @@ export function drawBars(
 	const X = (s: number) => nowX + (s - t) * pps;
 	const tMin = t - nowX / pps,
 		tMax = t + (W - nowX) / pps;
-	const layout = barLayout(data.voices, view, selected, H);
+	const axis = pitchAxis(data.voices, H),
+		y = axis.y;
+	const layout = barLayout(data.voices, selected, axis.step);
+	const font = selected.size > 1 ? 14 : 20;
 
 	// Measure lines and numbers.
 	g.font = '12px system-ui, sans-serif';
@@ -164,25 +122,14 @@ export function drawBars(
 	});
 
 	// Pitch grid: one faint line per semitone, labelled at every C.
-	for (const L of view === 'overlay' ? [layout[0]] : layout) {
-		if (L.lane) {
-			g.fillStyle = colors[L.v.name];
-			g.globalAlpha = 0.05;
-			g.fillRect(0, L.lane[0], W, L.lane[1] - 2);
-			g.globalAlpha = 0.8;
-			g.font = '600 12px system-ui, sans-serif';
-			g.fillText(L.v.name.toUpperCase(), 8, L.lane[0] + 16);
-			g.globalAlpha = 1;
-		}
-		for (let p = L.grid.lo; p <= L.grid.hi; p++) {
-			const y = Math.round(L.grid.y(p)) + 0.5;
-			g.fillStyle = p % 12 === 0 ? 'rgb(255 255 255 / 0.13)' : 'rgb(255 255 255 / 0.035)';
-			g.fillRect(0, y, W, 1);
-			if (p % 12 === 0) {
-				g.fillStyle = 'rgb(255 255 255 / 0.35)';
-				g.font = '11px system-ui, sans-serif';
-				g.fillText(`C${p / 12 - 1}`, W - 26, y - 3);
-			}
+	for (let p = axis.lo; p <= axis.hi; p++) {
+		const gy = Math.round(y(p)) + 0.5;
+		g.fillStyle = p % 12 === 0 ? 'rgb(255 255 255 / 0.13)' : 'rgb(255 255 255 / 0.035)';
+		g.fillRect(0, gy, W, 1);
+		if (p % 12 === 0) {
+			g.fillStyle = 'rgb(255 255 255 / 0.35)';
+			g.font = '11px system-ui, sans-serif';
+			g.fillText(`C${p / 12 - 1}`, W - 26, gy - 3);
 		}
 	}
 
@@ -204,50 +151,50 @@ export function drawBars(
 			if (n.t1 < tMin || n.t0 > tMax) return;
 			const x0 = X(n.t0) - grow / 2,
 				x1 = X(n.t1) - 3 + grow / 2,
-				y = L.y(n.p) - h / 2;
+				top = y(n.p) - h / 2;
 			// Connect notes of a melisma.
 			const next = notes[i + 1];
 			if (!L.outline && next && next.s === n.s && next.t0 - n.t1 < 0.01 && next.p !== n.p) {
 				g.globalAlpha = L.alpha * 0.5;
 				g.beginPath();
-				g.moveTo(x1 - h / 2, L.y(n.p));
-				g.lineTo(X(next.t0) - grow / 2 + h / 2, L.y(next.p));
+				g.moveTo(x1 - h / 2, y(n.p));
+				g.lineTo(X(next.t0) - grow / 2 + h / 2, y(next.p));
 				g.stroke();
 			}
 			g.globalAlpha = L.alpha * (L.outline ? 0.45 : 0.28);
-			roundRect(g, x0, y, x1 - x0, h, L.outline);
+			roundRect(g, x0, top, x1 - x0, h, L.outline);
 			if (x0 < nowX) {
 				g.save();
 				pastClip();
 				g.globalAlpha = L.alpha;
 				if (L.outline) {
-					roundRect(g, x0, y, x1 - x0, h, true);
+					roundRect(g, x0, top, x1 - x0, h, true);
 					g.globalAlpha = 0.15;
 				} else if (n.t0 <= t && t < n.t1) {
 					[g.shadowColor, g.shadowBlur] = [color, 18];
 				}
-				roundRect(g, x0, y, x1 - x0, h);
+				roundRect(g, x0, top, x1 - x0, h);
 				g.restore();
 			}
 		});
 		if (L.lyrics) {
-			g.font = `500 ${L.font}px ${lyricFont}`;
+			g.font = `500 ${font}px ${lyricFont}`;
 			const firstNote = new Map<number, Note>();
 			for (const n of notes) if (!firstNote.has(n.s)) firstNote.set(n.s, n);
 			L.v.syllables.forEach((s, i) => {
 				if (s.t1 < tMin - 2 || s.t0 > tMax) return;
 				const x = X(s.t0),
-					y = L.y(firstNote.get(i)!.p) + h / 2 + L.font + 2;
+					ly = y(firstNote.get(i)!.p) + h / 2 + font + 2;
 				const text = s.text + (s.syl === 'b' || s.syl === 'm' ? '-' : '');
 				g.globalAlpha = L.alpha * 0.45;
 				g.fillStyle = '#fff';
-				g.fillText(text, x, y);
+				g.fillText(text, x, ly);
 				if (x < nowX) {
 					g.save();
 					pastClip();
 					g.globalAlpha = L.alpha;
 					g.fillStyle = color;
-					g.fillText(text, x, y);
+					g.fillText(text, x, ly);
 					g.restore();
 				}
 			});
@@ -260,7 +207,7 @@ export function drawBars(
 			g.globalAlpha = L.alpha;
 			[g.shadowColor, g.shadowBlur] = [color, 14];
 			g.beginPath();
-			g.arc(nowX, L.y(active.p), h * 0.55, 0, 2 * Math.PI);
+			g.arc(nowX, y(active.p), h * 0.55, 0, 2 * Math.PI);
 			if (L.outline) g.stroke();
 			else g.fill();
 			g.restore();
@@ -268,11 +215,7 @@ export function drawBars(
 		g.globalAlpha = 1;
 	}
 
-	if (mic) {
-		// Bars share one pitch axis; in lanes, the singer is taken to sing the first selected part.
-		const L = view === 'overlay' ? layout[0] : layout.find((L) => selected.has(L.v.name))!;
-		drawMic(g, mic, L, X, tMin, nowX, W, H);
-	}
+	if (mic) drawMic(g, mic, y, X, tMin, nowX);
 
 	g.fillStyle = 'rgb(255 255 255 / 0.55)';
 	g.fillRect(nowX - 1, 0, 2, H);
@@ -281,18 +224,12 @@ export function drawBars(
 function drawMic(
 	g: CanvasRenderingContext2D,
 	mic: MicTrace,
-	L: VoiceLayout,
+	y: (p: number) => number,
 	X: (s: number) => number,
 	tMin: number,
-	nowX: number,
-	W: number,
-	H: number
+	nowX: number
 ) {
 	g.save();
-	g.beginPath();
-	if (L.lane) g.rect(0, L.lane[0], W, L.lane[1]);
-	else g.rect(0, 0, W, H);
-	g.clip();
 	g.strokeStyle = g.fillStyle = '#fff';
 	[g.shadowColor, g.shadowBlur] = ['#fff', 8];
 	g.lineWidth = 3;
@@ -305,8 +242,8 @@ function drawMic(
 		if (Number.isNaN(pt.p)) prev = undefined;
 		else {
 			const joined = prev && prev.t - pt.t < 0.1 && Math.abs(prev.p - pt.p) < 2;
-			if (joined) g.lineTo(X(pt.t), L.y(pt.p));
-			else g.moveTo(X(pt.t), L.y(pt.p));
+			if (joined) g.lineTo(X(pt.t), y(pt.p));
+			else g.moveTo(X(pt.t), y(pt.p));
 			prev = pt;
 		}
 		if (pt.t < tMin) break;
@@ -314,7 +251,7 @@ function drawMic(
 	g.stroke();
 	if (mic.now !== null) {
 		g.beginPath();
-		g.arc(nowX, L.y(mic.now), 6, 0, 2 * Math.PI);
+		g.arc(nowX, y(mic.now), 6, 0, 2 * Math.PI);
 		g.fill();
 	}
 	g.restore();

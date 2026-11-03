@@ -73,4 +73,4 @@ export interface PieceEntry {
 	hues?: [string, number][];
 }
 
-export type View = 'overlay' | 'lanes' | 'lines';
+export type View = 'overlay' | 'lines';

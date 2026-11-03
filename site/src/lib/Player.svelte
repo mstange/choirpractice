@@ -33,7 +33,6 @@
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'overlay', label: 'Bars' },
-		{ id: 'lanes', label: 'Lanes' },
 		{ id: 'lines', label: 'Lines' }
 	];
 	const voiceNames = voices.map((v) => v.name);
@@ -97,7 +96,7 @@
 			if (mixer.playing && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
 			if (view !== 'lines' && barsCanvas)
-				drawBars(barsCanvas, piece, colors, t, view, selectedSet, mic.active ? micTrace : null);
+				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
 			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[selected[0]]);
 			drawTimeline(timelineCanvas, piece, colors, mixer, t);
 			raf = requestAnimationFrame(frame);

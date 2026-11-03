@@ -1,0 +1,7 @@
+// The page as a Cloudflare Worker with static assets; `npm run deploy` builds and uploads it.
+{
+	"name": "choirpractice",
+	"compatibility_date": "2026-11-02",
+	"assets": { "directory": "./build" },
+	"routes": [{ "pattern": "choirpractice.app", "custom_domain": true }]
+}

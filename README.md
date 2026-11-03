@@ -86,21 +86,18 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 
 ## Deploying
 
-The page and the media are hosted separately: the page on any static host, built from this repository, and the media in a Cloudflare R2 bucket, which charges nothing for downloads. This setup is not tested yet.
+The page and the media are hosted separately on Cloudflare: the page as a Worker with static assets at `choirpractice.app`, and the media in an R2 bucket at `media.choirpractice.app`, which charges nothing for downloads. Both domains need the zone to be on Cloudflare.
 
-- **Media host:** an R2 bucket with public access through a custom domain such as `media.example.org`, with
+- **Media host:** an R2 bucket with public access through a custom domain such as `media.choirpractice.app`, with
   - a CORS rule that allows `GET` from the page's origin;
   - no directory listing, which is R2's default.
-- **Season keys:** a season is uploaded under a random key instead of its name, for example from `openssl rand -hex 16`. Whoever has the link `https://app.example.org/#/<key>/` can open the season, so it is meant for people who bought the sheet music. A new season gets a new key. The key is in the URL fragment, which browsers don't send to the page's host.
+- **Season keys:** a season is uploaded under a random key instead of its name, for example from `openssl rand -hex 16`. Whoever has the link `https://choirpractice.app/#/<key>/` can open the season, so it is meant for people who bought the sheet music. A new season gets a new key. The key is in the URL fragment, which browsers don't send to the page's host.
 - **Demo:** upload `media/demo` under the name `demo`, without a key.
 - **Upload** a season with [rclone](https://rclone.org/) configured for R2. Uploads replace files under the same names, so every file is revalidated on each request:
   ```sh
   rclone sync media/<season> r2:<bucket>/<key> --header-upload "Cache-Control: no-cache"
   ```
-- **Page:** build it with the media host's address and upload `site/build/` to the static host:
-  ```sh
-  cd site && VITE_MEDIA_BASE=https://media.example.org npm run build
-  ```
+- **Page:** `cd site && npm run deploy` builds the page with `VITE_MEDIA_BASE` set to the media host and uploads `site/build/` with `wrangler deploy`, as configured in `site/wrangler.jsonc`. The live page is whatever is in the working copy. Any other static host works too: build with `VITE_MEDIA_BASE=https://<media host> npm run build` and upload `site/build/`.
 
 ## How it works and why
 

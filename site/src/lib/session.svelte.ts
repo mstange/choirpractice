@@ -1,7 +1,7 @@
 import { Mic } from './mic.svelte.ts';
 import type { View } from './types.ts';
 
-/** What carries over from one piece to the next. */
+/** What carries over from one piece to the next, and what each piece keeps across visits. */
 export class Session {
 	readonly mic = new Mic();
 	view: View = $state('pitch');
@@ -25,16 +25,29 @@ export class Session {
 		localStorage.setItem('micDelay', String(value));
 	}
 
-	/** Carries the selection over to a piece with these vocal parts. */
-	enter(voices: string[]) {
+	/**
+	 * Starts the piece saved under `key`, with these vocal parts: restores the selection and the
+	 * emphasis saved for it, or else carries them over from the previous piece. Returns the saved
+	 * accompaniment levels.
+	 */
+	enter(key: string, voices: string[]): Record<string, number> {
+		const saved: Saved | null = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null');
 		const all = this.#voices.length > 1 && this.selected.length === this.#voices.length;
-		const matched = all
-			? voices
-			: voices.filter((v) => this.selected.some((s) => equivalent(s, voices) === v));
+		const restored = voices.filter((v) => saved?.selected.includes(v));
+		const matched = restored.length
+			? restored
+			: all
+				? voices
+				: voices.filter((v) => this.selected.some((s) => equivalent(s, voices) === v));
 		this.selected = matched.length ? matched : [voices[0]];
 		this.#voices = voices;
+		this.emphasis = saved?.emphasis ?? this.emphasis;
+		return saved?.levels ?? {};
 	}
 }
+
+/** What is kept per piece across visits. */
+export type Saved = { selected: string[]; emphasis: number; levels: Record<string, number> };
 
 const norm = (name: string) =>
 	name

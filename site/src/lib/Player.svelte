@@ -15,7 +15,7 @@
 	import Lyrics from './Lyrics.svelte';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
-	import type { Session } from './session.svelte.ts';
+	import type { Saved, Session } from './session.svelte.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
 	// The route re-creates this component for each piece, so props never change after creation.
@@ -61,11 +61,28 @@
 	// svelte-ignore state_referenced_locally
 	const mic = session.mic;
 	// svelte-ignore state_referenced_locally
-	session.enter(voiceNames);
+	const storageKey = `piece:${season}/${entry.slug}`;
+	// svelte-ignore state_referenced_locally
+	const savedLevels = session.enter(storageKey, voiceNames);
 	let accompLevels = $state(
-		// svelte-ignore state_referenced_locally
-		Object.fromEntries(accompaniment.map((n) => [n, entry.levels?.[n] ?? 0.6]))
+		Object.fromEntries(
+			// svelte-ignore state_referenced_locally
+			accompaniment.map((n) => [n, savedLevels[n] ?? entry.levels?.[n] ?? 0.6])
+		)
 	);
+	// Save once the user changes something, so that a piece they haven't touched keeps taking the
+	// selection over from the previous piece.
+	let changed = false;
+	$effect(() => {
+		const saved: Saved = {
+			selected: session.selected,
+			emphasis: session.emphasis,
+			levels: accompLevels
+		};
+		const json = JSON.stringify(saved);
+		if (changed) localStorage.setItem(storageKey, json);
+		changed = true;
+	});
 	let t = $state(0);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;

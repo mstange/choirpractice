@@ -30,7 +30,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
   - `src/lib/Lyrics.svelte`: the Lyrics view. `src/lib/canvas.ts` draws the Pitch view and the timeline, and `src/lib/sheet.ts` the sheet music strip of the Pitch view.
   - `src/lib/audio.svelte.ts`: loading the stem chunks and mixing them with Web Audio.
   - `src/lib/mic.svelte.ts` and `src/lib/pitch.ts`: the microphone and its pitch detection.
-  - `src/lib/session.svelte.ts`: what carries over when another piece is picked: the mic, the view, the mix emphasis, and the selected parts, which are mapped to the new piece's parts by name, then by name without its number, then by voice type.
+  - `src/lib/session.svelte.ts`: what carries over when another piece is picked: the mic, the view, the mix emphasis, and the selected parts, which are mapped to the new piece's parts by name, then by name without its number, then by voice type. Once the user changes a piece's selected parts or Mix settings, the piece keeps them in `localStorage` and gets them back on later visits instead of what carries over. The mic delay is kept for all pieces.
   - `src/lib/pieces.ts`: where the season directories are. `vite.config.ts` serves `media/` next to the page for `npm run dev` and `npm run preview`; a deployed page fetches from `VITE_MEDIA_BASE`.
   - Select a piece with `index.html#/<season>/<slug>`. `index.html#/<season>` opens the season's first piece.
 - Formatting: `npm run format` in `site/` formats the page with Prettier, and `uvx ruff format tools` the Python tools.

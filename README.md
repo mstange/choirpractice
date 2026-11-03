@@ -50,7 +50,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
    ```
    It fails if a stem comes out silent, which means its part couldn't be isolated. It prints syllable and note counts per vocal part. "unsung notes" should be 0. If it isn't, notes without lyrics are following a rest, which usually means a lyric is missing in the score. "lyrics on tied notes" counts lyrics placed on the continuation of a tie, which the score probably meant as a slur. Each of them starts a new bar. Below each part's counts it lists suspicious spots by bar number, for checking in MuseScore:
    - a lyric on the continuation of a tie;
-   - a lyric inside a slur that started on an earlier note;
+   - a lyric inside a solid slur that started on an earlier note (dashed and dotted slurs, which often mean "don't breathe", are ignored);
    - a note without a lyric after a rest;
    - syllable tags that don't chain, such as a word that begins but never ends, which often means a lyric is missing;
    - a lyric on a verse line other than 1.

@@ -132,6 +132,9 @@ def parse_part(part):
                     ]
                     events.append((mstart + start, dur, lyrics, [(midi, tied)], bar, bool(slurs)))
                 for s in el.findall("notations/slur"):
+                    # Dashed or dotted slurs mark phrasing ("don't breathe"), not melismas.
+                    if s.get("line-type", "solid") != "solid":
+                        continue
                     (slurs.add if s.get("type") == "start" else slurs.discard)(s.get("number", "1"))
         mstart += mlen
     measures.append(mstart)

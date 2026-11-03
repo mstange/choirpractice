@@ -13,7 +13,8 @@
 	<p>
 		Try it with <a href={resolve('/[season]', { season: 'demo' })}>Frère Jacques</a>, a round in
 		four parts, or with Mozart’s
-		<a href={resolve('/[season]/[slug]', { season: 'demo', slug: 'ave-verum-corpus' })}
+		<a
+			href={resolve('/[season]/[slug]/[[view=view]]', { season: 'demo', slug: 'ave-verum-corpus' })}
 			>Ave verum corpus</a
 		> for choir and piano.
 	</p>

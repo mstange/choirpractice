@@ -1,10 +1,8 @@
 import { Mic } from './mic.svelte.ts';
-import type { View } from './types.ts';
 
 /** What carries over from one piece to the next, and what each piece keeps across visits. */
 export class Session {
 	readonly mic = new Mic();
-	view: View = $state('pitch');
 	emphasis = $state(0.7);
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
 	selected: string[] = $state([]);

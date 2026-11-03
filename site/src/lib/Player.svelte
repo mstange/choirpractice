@@ -18,19 +18,21 @@
 	import type { Saved, Session } from './session.svelte.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
-	// The route re-creates this component for each piece, so props never change after creation.
-	// The session outlives it.
+	// The route re-creates this component for each piece, so props other than the view never change
+	// after creation. The session outlives it.
 	let {
 		season,
 		entry,
 		piece,
 		pieces,
+		view,
 		session
 	}: {
 		season: string;
 		entry: PieceEntry;
 		piece: PieceData;
 		pieces: PieceEntry[];
+		view: View;
 		session: Session;
 	} = $props();
 	// svelte-ignore state_referenced_locally
@@ -126,7 +128,7 @@
 			t = mixer.now();
 			if (mixer.playing && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
-			if (session.view !== 'lyrics' && barsCanvas)
+			if (view !== 'lyrics' && barsCanvas)
 				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
 			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]]);
 			drawTimeline(timelineCanvas, piece, colors, mixer, t);
@@ -165,6 +167,18 @@
 	function togglePlay() {
 		if (mixer.playing) mixer.pause();
 		else mixer.play();
+	}
+
+	// The view is part of the URL. Switching it replaces the history entry, so that Back goes to the
+	// previous piece rather than the previous view.
+	function show(slug: string, v: View) {
+		const url = resolve('/[season]/[slug]/[[view=view]]', {
+			season,
+			slug,
+			view: v === 'lyrics' ? v : undefined
+		});
+		if (slug === entry.slug) goto(url, { replace: true, reset: false });
+		else goto(url);
 	}
 
 	/** Selects a single part, or with `extend`, adds it to or removes it from the selection. */
@@ -213,7 +227,7 @@
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
-			session.view = VIEWS[(VIEWS.findIndex((v) => v.id === session.view) + 1) % VIEWS.length].id;
+			show(entry.slug, VIEWS[(VIEWS.findIndex((v) => v.id === view) + 1) % VIEWS.length].id);
 		}
 	}
 
@@ -263,7 +277,7 @@
 			class="piece"
 			aria-label="Piece"
 			value={entry.slug}
-			onchange={(e) => goto(resolve('/[season]/[slug]', { season, slug: e.currentTarget.value }))}
+			onchange={(e) => show(e.currentTarget.value, view)}
 		>
 			{#each pieces as p (p.slug)}
 				<option value={p.slug}>{p.label}</option>
@@ -276,7 +290,7 @@
 	</header>
 
 	<main class="stage">
-		{#if session.view === 'lyrics'}
+		{#if view === 'lyrics'}
 			<Lyrics {voices} {colors} selected={selectedSet} {t} onseek={seek} />
 		{:else}
 			<canvas
@@ -289,7 +303,7 @@
 	</main>
 
 	<footer>
-		{#if session.view === 'pitch' && sheet}
+		{#if view === 'pitch' && sheet}
 			<canvas
 				class="sheet"
 				style:height="{sheetHeight}px"
@@ -402,10 +416,8 @@
 
 			<div class="segmented views" role="radiogroup" aria-label="View">
 				{#each VIEWS as v (v.id)}
-					<button
-						role="radio"
-						aria-checked={session.view === v.id}
-						onclick={() => (session.view = v.id)}>{v.label}</button
+					<button role="radio" aria-checked={view === v.id} onclick={() => show(entry.slug, v.id)}
+						>{v.label}</button
 					>
 				{/each}
 			</div>

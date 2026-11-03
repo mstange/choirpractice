@@ -13,3 +13,6 @@ __pycache__/
 .DS_Store
 
 .vite/
+
+# Local test tooling (Playwright and scripts)
+/.dev/

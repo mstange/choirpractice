@@ -13,18 +13,26 @@
 	} from './canvas.ts';
 	import { assignColors } from './colors.ts';
 	import Lyrics from './Lyrics.svelte';
-	import { Mic } from './mic.svelte.ts';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
+	import type { Session } from './session.svelte.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
 	// The route re-creates this component for each piece, so props never change after creation.
+	// The session outlives it.
 	let {
 		season,
 		entry,
 		piece,
-		pieces
-	}: { season: string; entry: PieceEntry; piece: PieceData; pieces: PieceEntry[] } = $props();
+		pieces,
+		session
+	}: {
+		season: string;
+		entry: PieceEntry;
+		piece: PieceData;
+		pieces: PieceEntry[];
+		session: Session;
+	} = $props();
 	// svelte-ignore state_referenced_locally
 	const { voices, parts, measures, audio, engravings } = piece;
 	// svelte-ignore state_referenced_locally
@@ -50,22 +58,24 @@
 		hue
 	]);
 
-	let selected = $state([voiceNames[0]]);
-	let view: View = $state('pitch');
-	let emphasis = $state(0.7);
+	// svelte-ignore state_referenced_locally
+	const mic = session.mic;
+	// svelte-ignore state_referenced_locally
+	session.enter(voiceNames);
 	let accompLevels = $state(Object.fromEntries(accompaniment.map((n) => [n, 0.6])));
 	let t = $state(0);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
 	const partButtons: Record<string, HTMLButtonElement> = {};
-	const mic = new Mic();
 	const micTrace: MicTrace = { trail: [], now: null };
 
 	const sheets = engravings.map((e) => new Sheet(e, fileUrl(e.file)));
 	// A single selected part gets its own engraving; several get the one with all vocal parts.
 	const sheet = $derived(
 		sheets.find((s) =>
-			selected.length === 1 ? s.info.parts.join() === selected[0] : s.info.parts.length > 1
+			session.selected.length === 1
+				? s.info.parts.join() === session.selected[0]
+				: s.info.parts.length > 1
 		) ?? null
 	);
 	let sheetCanvas: HTMLCanvasElement | undefined = $state();
@@ -74,7 +84,7 @@
 	const sheetHeight = $derived(
 		sheet && Math.min((sheet.info.height / sheet.info.spatium) * SPATIUM_PX, windowHeight / 3)
 	);
-	const selectedSet = $derived(new Set(selected));
+	const selectedSet = $derived(new Set(session.selected));
 	const measure = $derived(measureAt(t));
 	const hue = $derived(
 		hueTimes.filter(([st]) => st <= t + 1).pop()?.[1] ?? hueTimes[0]?.[1] ?? 215
@@ -82,8 +92,9 @@
 
 	$effect(() => {
 		for (const { name, vocal } of parts) {
-			const unselected = 1 - 0.9 * emphasis;
-			mixer.setGain(name, !vocal ? accompLevels[name] : selected.includes(name) ? 1 : unselected);
+			const unselected = 1 - 0.9 * session.emphasis;
+			const gain = !vocal ? accompLevels[name] : session.selected.includes(name) ? 1 : unselected;
+			mixer.setGain(name, gain);
 		}
 	});
 
@@ -95,9 +106,9 @@
 			t = mixer.now();
 			if (mixer.playing && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
-			if (view !== 'lyrics' && barsCanvas)
+			if (session.view !== 'lyrics' && barsCanvas)
 				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
-			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[selected[0]]);
+			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]]);
 			drawTimeline(timelineCanvas, piece, colors, mixer, t);
 			raf = requestAnimationFrame(frame);
 		});
@@ -105,7 +116,6 @@
 			cancelAnimationFrame(raf);
 			controller.abort();
 			mixer.close();
-			mic.stop();
 		};
 	});
 
@@ -138,9 +148,11 @@
 
 	/** Selects a single part, or with `extend`, adds it to or removes it from the selection. */
 	function pick(name: string, extend: boolean) {
-		if (!extend) selected = [name];
-		else if (!selected.includes(name)) selected = voiceNames.filter((n) => n === name || selected.includes(n));
-		else if (selected.length > 1) selected = selected.filter((n) => n !== name);
+		if (!extend) session.selected = [name];
+		else if (!session.selected.includes(name))
+			session.selected = voiceNames.filter((n) => n === name || session.selected.includes(n));
+		else if (session.selected.length > 1)
+			session.selected = session.selected.filter((n) => n !== name);
 		partButtons[name].scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 	}
 
@@ -174,13 +186,13 @@
 			const m = measureAt(t + 0.3) + (e.key === 'ArrowRight' ? 1 : -1);
 			seek(measures[Math.max(0, Math.min(m, measures.length - 2))]);
 		} else if (digit === '0') {
-			selected = voiceNames;
+			session.selected = voiceNames;
 		} else if (digit && voiceNames[+digit - 1]) {
 			pick(voiceNames[+digit - 1], e.shiftKey);
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
-			view = VIEWS[(VIEWS.findIndex((v) => v.id === view) + 1) % VIEWS.length].id;
+			session.view = VIEWS[(VIEWS.findIndex((v) => v.id === session.view) + 1) % VIEWS.length].id;
 		}
 	}
 
@@ -240,7 +252,7 @@
 	</header>
 
 	<main class="stage">
-		{#if view === 'lyrics'}
+		{#if session.view === 'lyrics'}
 			<Lyrics {voices} {colors} selected={selectedSet} {t} onseek={seek} />
 		{:else}
 			<canvas
@@ -253,7 +265,7 @@
 	</main>
 
 	<footer>
-		{#if view === 'pitch' && sheet}
+		{#if session.view === 'pitch' && sheet}
 			<canvas
 				class="sheet"
 				style:height="{sheetHeight}px"
@@ -304,8 +316,8 @@
 			>
 				<button
 					class="all"
-					aria-pressed={selected.length === voiceNames.length}
-					onclick={() => (selected = voiceNames)}>All</button
+					aria-pressed={session.selected.length === voiceNames.length}
+					onclick={() => (session.selected = voiceNames)}>All</button
 				>
 				{#each voiceNames as name (name)}
 					<button
@@ -319,8 +331,10 @@
 
 			<div class="segmented views" role="radiogroup" aria-label="View">
 				{#each VIEWS as v (v.id)}
-					<button role="radio" aria-checked={view === v.id} onclick={() => (view = v.id)}
-						>{v.label}</button
+					<button
+						role="radio"
+						aria-checked={session.view === v.id}
+						onclick={() => (session.view = v.id)}>{v.label}</button
 					>
 				{/each}
 			</div>
@@ -341,7 +355,14 @@
 			<button class="mix" popovertarget="mix-panel">Mix</button>
 			<div id="mix-panel" class="mix-panel" popover="auto" onbeforetoggle={placeAbove}>
 				<label for="emphasis" title="How much quieter the other parts are">Emphasis</label>
-				<input id="emphasis" type="range" min="0" max="1" step="0.01" bind:value={emphasis} />
+				<input
+					id="emphasis"
+					type="range"
+					min="0"
+					max="1"
+					step="0.01"
+					bind:value={session.emphasis}
+				/>
 				{#each accompaniment as name (name)}
 					<label for="accomp-{name}">{name}</label>
 					<input

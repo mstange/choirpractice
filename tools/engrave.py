@@ -30,6 +30,8 @@ STYLE = {
     # Wide enough for any piece to fit on one line; MuseScore doesn't stretch a mostly empty last system.
     "pageWidth": 2000, "pagePrintableWidth": 1999, "pageHeight": 100,
     "lyricsMinDistance": 1,
+    # A header or footer, such as the copyright line, would sit far from the music on that page.
+    "showHeader": 0, "showFooter": 0, "showPageNumber": 0,
 }
 for tag, value in STYLE.items():
     style, n = re.subn(rf"<{tag}>[^<]*</{tag}>", f"<{tag}>{value}</{tag}>", style)

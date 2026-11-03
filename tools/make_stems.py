@@ -21,6 +21,13 @@ for keep, name in variants:
         # MuseScore 4: mute state lives in audiosettings.json, keyed by part id.
         keep_id = keep is not None and re.match(r'<Part id="(\d+)"', part_xml[keep]).group(1)
         settings = json.load(open(src / "audiosettings.json"))
+        # Parts whose mixer settings were never changed, as in a score imported from MusicXML,
+        # have no track; MuseScore fills in the rest of a track from the part and instrument ids.
+        tracks = {t["partId"] for t in settings["tracks"]}
+        for p in part_xml:
+            part_id, instrument_id = re.search(r'<Part id="(\d+)">.*?<Instrument id="([^"]*)"', p, re.S).groups()
+            if part_id not in tracks:
+                settings["tracks"].append({"partId": part_id, "instrumentId": instrument_id})
         for track in settings["tracks"]:
             # Tracks that were never muted/soloed in MuseScore have no soloMuteState at all.
             track["soloMuteState"] = {"mute": track["partId"] != keep_id, "solo": False}

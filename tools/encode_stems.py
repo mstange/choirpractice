@@ -7,7 +7,7 @@ samples [k*CHUNK, (k+1)*CHUNK), plus PAD samples of the neighbouring chunks on e
 frames near the edges of an encoding are noisy, and the padding keeps those frames out of the
 stitched result. Adds an "audio" entry describing the chunking to piece.json.
 """
-import concurrent.futures, json, os, pathlib, shutil, subprocess, sys, wave
+import array, concurrent.futures, json, os, pathlib, shutil, subprocess, sys, wave
 
 RATE = 44100
 CHUNK = 10 * RATE
@@ -30,7 +30,10 @@ def subtract_baseline(name):
         "-filter_complex", "[1]volume=-1[neg];[0][neg]amix=inputs=2:normalize=0",
         "-ar", str(RATE), "-ac", "1", "-c:a", "pcm_s16le", dst)
     with wave.open(str(dst)) as w:
-        return w.getnframes()
+        samples = array.array("h", w.readframes(w.getnframes()))
+    # A silent stem means the part wasn't isolated: every variant rendered the same mix.
+    assert max(samples, default=0) - min(samples, default=0) > 64, f"stem {name} is silent"
+    return len(samples)
 
 
 def encode_chunk(name, k, length):

@@ -240,13 +240,16 @@
 		};
 	}
 
-	// Anchor positioning isn't available everywhere yet, so place the mix panel above its button.
+	// Anchor positioning isn't available everywhere yet, so place a panel above its button, lined up
+	// with the button's edge that is nearer to the window's edge.
 	function placeAbove(e: ToggleEvent) {
 		if (e.newState !== 'open') return;
 		const panel = e.currentTarget as HTMLElement;
 		const button = document.querySelector(`[popovertarget="${panel.id}"]`)!;
 		const rect = button.getBoundingClientRect();
-		panel.style.right = `${document.documentElement.clientWidth - rect.right}px`;
+		const width = document.documentElement.clientWidth;
+		if (rect.left + rect.right < width) panel.style.left = `${rect.left}px`;
+		else panel.style.right = `${width - rect.right}px`;
 		panel.style.bottom = `${innerHeight - rect.top + 8}px`;
 	}
 </script>
@@ -347,6 +350,53 @@
 						aria-pressed={selectedSet.has(name)}
 						onclick={(e) => pick(name, e.shiftKey || e.metaKey)}>{name}</button
 					>
+				{/each}
+			</div>
+
+			<!-- On narrow screens the parts don't fit in a row, and touch screens have no Shift. -->
+			<button class="parts-menu" popovertarget="parts-panel" aria-label="Dominant parts">
+				<span class="label">
+					{#if session.selected.length === voiceNames.length}
+						All parts
+					{:else}
+						{#each session.selected as name, i (name)}
+							{#if i},{/if}
+							<span style:color={colors[name]}>{name}</span>
+						{/each}
+					{/if}
+				</span>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>
+			</button>
+			<div id="parts-panel" class="parts-panel" popover="auto" onbeforetoggle={placeAbove}>
+				<button
+					class="solo"
+					aria-pressed={session.selected.length === voiceNames.length}
+					onclick={(e) => {
+						session.selected = voiceNames;
+						e.currentTarget.closest<HTMLElement>('[popover]')!.hidePopover();
+					}}>All</button
+				>
+				<span></span>
+				{#each voiceNames as name (name)}
+					<button
+						class="solo"
+						style:--c={colors[name]}
+						aria-pressed={session.selected.length === 1 && session.selected[0] === name}
+						onclick={(e) => {
+							pick(name, false);
+							e.currentTarget.closest<HTMLElement>('[popover]')!.hidePopover();
+						}}>{name}</button
+					>
+					<button
+						class="add"
+						role="checkbox"
+						style:--c={colors[name]}
+						aria-checked={selectedSet.has(name)}
+						aria-label="Also {name}"
+						onclick={() => pick(name, true)}
+					>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" /></svg>
+					</button>
 				{/each}
 			</div>
 
@@ -624,6 +674,103 @@
 		color: #111;
 	}
 
+	.parts-menu {
+		display: none;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		min-width: 0;
+	}
+	.parts-menu .label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.parts-menu svg {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		opacity: 0.7;
+	}
+	.parts-panel {
+		position: fixed;
+		inset: auto;
+		margin: 0;
+		padding: 6px;
+		color: inherit;
+		background: hsl(var(--bg-hue) 18% 13% / 0.97);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+		grid-template-columns: auto auto;
+		gap: 2px 6px;
+		max-height: 60dvh;
+		overflow-y: auto;
+	}
+	.parts-panel:popover-open {
+		display: grid;
+	}
+	.parts-panel button {
+		border: 0;
+		background: transparent;
+		padding: 8px 14px;
+	}
+	.parts-panel button:hover {
+		background: rgb(255 255 255 / 0.1);
+	}
+	.parts-panel .solo {
+		text-align: left;
+		color: var(--c, inherit);
+	}
+	.parts-panel .solo[aria-pressed='true'] {
+		background: var(--c, #ddd);
+		color: #111;
+	}
+	.parts-panel .add {
+		display: grid;
+		place-items: center;
+		padding: 8px 10px;
+	}
+	.parts-panel .add svg {
+		width: 18px;
+		height: 18px;
+		padding: 2px;
+		box-sizing: border-box;
+		border: 1.5px solid var(--c);
+		border-radius: 4px;
+		fill: none;
+		stroke: transparent;
+		stroke-width: 2.2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.parts-panel .add[aria-checked='true'] svg {
+		background: var(--c);
+		stroke: #111;
+	}
+
+	@media (max-width: 700px) {
+		.controls {
+			flex-wrap: wrap;
+		}
+		.parts {
+			display: none;
+		}
+		/* Takes the rest of the first row, so that the other controls wrap into the second. */
+		.parts-menu {
+			display: flex;
+			flex: 1 0 50%;
+			margin-inline-start: auto;
+		}
+		.views {
+			margin-inline-start: auto;
+		}
+	}
+
 	.views {
 		flex: none;
 	}
@@ -696,5 +843,10 @@
 		margin-top: 6px;
 		font-size: 12px;
 		opacity: 0.4;
+	}
+	@media (hover: none) {
+		.hint {
+			display: none;
+		}
 	}
 </style>

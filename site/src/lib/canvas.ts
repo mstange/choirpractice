@@ -1,0 +1,372 @@
+import type { Sheet } from './sheet.ts';
+import type { Note, PieceData, Voice } from './types.ts';
+
+export const BAR_SECONDS = 10; // seconds of music visible across the bar view
+export const NOW_X = 0.2; // position of the "now" line as a fraction of the bar view width
+
+let lyricFont: string | undefined;
+
+/** The microphone's pitch: past points (NaN where unpitched) and the current pitch. */
+export interface MicTrace {
+	trail: { t: number; p: number }[];
+	now: number | null;
+}
+
+const pitchRanges = new WeakMap<Note[], [number, number]>();
+function pitchRange(notes: Note[]): [number, number] {
+	let range = pitchRanges.get(notes);
+	if (!range) {
+		range = [Infinity, -Infinity];
+		for (const n of notes) range = [Math.min(range[0], n.p), Math.max(range[1], n.p)];
+		pitchRanges.set(notes, range);
+	}
+	return range;
+}
+
+/** Sizes the canvas backing store to its CSS size and returns a context in CSS pixels. */
+function prepare(c: HTMLCanvasElement) {
+	const dpr = devicePixelRatio,
+		W = c.clientWidth,
+		H = c.clientHeight;
+	if (c.width !== W * dpr || c.height !== H * dpr) [c.width, c.height] = [W * dpr, H * dpr];
+	const g = c.getContext('2d')!;
+	g.setTransform(dpr, 0, 0, dpr, 0, 0);
+	g.clearRect(0, 0, W, H);
+	return { g, W, H };
+}
+
+interface VoiceLayout {
+	v: Voice;
+	y: (p: number) => number;
+	barH: number;
+	grow: number;
+	outline: boolean;
+	alpha: number;
+	lyrics: boolean;
+	font: number;
+	z: number;
+	lane?: [number, number];
+	grid: { lo: number; hi: number; y: (p: number) => number };
+}
+
+// Vertical layout of the bar view: for each voice, a pitch-to-y mapping plus drawing style.
+function barLayout(
+	voices: Voice[],
+	view: 'overlay' | 'lanes',
+	selected: Set<string>,
+	H: number
+): VoiceLayout[] {
+	const multi = selected.size > 1;
+	const all = selected.size === voices.length;
+	if (view === 'overlay') {
+		const ranges = voices.map((v) => pitchRange(v.notes));
+		const lo = Math.min(...ranges.map((r) => r[0])),
+			hi = Math.max(...ranges.map((r) => r[1]));
+		const top = 34,
+			bottom = H - 34;
+		const step = (bottom - top) / (hi - lo + 2);
+		const y = (p: number) => bottom - (p - lo + 1) * step;
+		const grid = { lo: lo - 1, hi: hi + 1, y };
+		const barH = Math.min(18, step * 0.8);
+		// Voices often sing in unison: selected voices are filled bars on top, and the others are
+		// slightly larger outlines, so they stay visible around them. Selected voices that
+		// coincide simply cover each other.
+		return voices.map((v, i) => {
+			const dom = selected.has(v.name);
+			const grow = dom ? 0 : 6;
+			return {
+				v,
+				y,
+				barH: barH + grow,
+				grow,
+				outline: !dom,
+				alpha: dom ? 1 : 0.8,
+				lyrics: dom,
+				font: multi ? 14 : 20,
+				grid,
+				z: dom ? 1 + i : 0
+			};
+		});
+	}
+	const weights: number[] = voices.map((v) => (!all && selected.has(v.name) ? 1.7 : 1));
+	const total = weights.reduce((a, b) => a + b);
+	let top = 24;
+	return voices.map((v, i) => {
+		const laneH = ((H - 24) * weights[i]) / total;
+		const [lo, hi] = pitchRange(v.notes);
+		// Padding and lyrics take at most half of the lane, so that crowded lanes still show notes.
+		const shrink = Math.min(1, laneH / 2 / 42);
+		const pad = 8 * shrink,
+			lyricSpace = 26 * shrink;
+		const step = (laneH - pad * 2 - lyricSpace) / (hi - lo + 1);
+		const laneTop = top;
+		const y = (p: number) => laneTop + pad + (hi - p + 0.5) * step;
+		top += laneH;
+		const dom = selected.has(v.name);
+		const font = (dom ? 18 : 15) * shrink;
+		return {
+			v,
+			y,
+			barH: Math.min(18, step * 0.9),
+			grow: 0,
+			outline: false,
+			alpha: dom ? 1 : 0.6,
+			lyrics: font >= 8,
+			font,
+			z: 0,
+			lane: [laneTop, laneH],
+			grid: { lo: lo - 1, hi: hi + 1, y }
+		};
+	});
+}
+
+function roundRect(
+	g: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	outline = false
+) {
+	g.beginPath();
+	g.roundRect(x, y, Math.max(w, h), h, h / 2);
+	if (outline) g.stroke();
+	else g.fill();
+}
+
+export function drawBars(
+	c: HTMLCanvasElement,
+	data: PieceData,
+	colors: Record<string, string>,
+	t: number,
+	view: 'overlay' | 'lanes',
+	selected: Set<string>,
+	mic: MicTrace | null
+) {
+	lyricFont ??= getComputedStyle(document.documentElement).getPropertyValue('--lyric-font');
+	const { g, W, H } = prepare(c);
+	const nowX = W * NOW_X,
+		pps = W / BAR_SECONDS;
+	const X = (s: number) => nowX + (s - t) * pps;
+	const tMin = t - nowX / pps,
+		tMax = t + (W - nowX) / pps;
+	const layout = barLayout(data.voices, view, selected, H);
+
+	// Measure lines and numbers.
+	g.font = '12px system-ui, sans-serif';
+	data.measures.forEach((m, i) => {
+		const x = X(m);
+		if (x < -40 || x > W) return;
+		g.fillStyle = 'rgb(255 255 255 / 0.07)';
+		g.fillRect(x, 0, 1, H);
+		g.fillStyle = 'rgb(255 255 255 / 0.3)';
+		if (i < data.measures.length - 1) g.fillText(String(i + 1), x + 4, 14);
+	});
+
+	// Pitch grid: one faint line per semitone, labelled at every C.
+	for (const L of view === 'overlay' ? [layout[0]] : layout) {
+		if (L.lane) {
+			g.fillStyle = colors[L.v.name];
+			g.globalAlpha = 0.05;
+			g.fillRect(0, L.lane[0], W, L.lane[1] - 2);
+			g.globalAlpha = 0.8;
+			g.font = '600 12px system-ui, sans-serif';
+			g.fillText(L.v.name.toUpperCase(), 8, L.lane[0] + 16);
+			g.globalAlpha = 1;
+		}
+		for (let p = L.grid.lo; p <= L.grid.hi; p++) {
+			const y = Math.round(L.grid.y(p)) + 0.5;
+			g.fillStyle = p % 12 === 0 ? 'rgb(255 255 255 / 0.13)' : 'rgb(255 255 255 / 0.035)';
+			g.fillRect(0, y, W, 1);
+			if (p % 12 === 0) {
+				g.fillStyle = 'rgb(255 255 255 / 0.35)';
+				g.font = '11px system-ui, sans-serif';
+				g.fillText(`C${p / 12 - 1}`, W - 26, y - 3);
+			}
+		}
+	}
+
+	// Draw the selected voices last so that they sit on top.
+	const order = [...layout].sort((a, b) => a.z - b.z);
+	const pastClip = () => {
+		g.beginPath();
+		g.rect(0, 0, nowX, H);
+		g.clip();
+	};
+	for (const L of order) {
+		const color = colors[L.v.name],
+			notes = L.v.notes,
+			h = L.barH,
+			grow = L.grow;
+		g.fillStyle = g.strokeStyle = color;
+		g.lineWidth = 2;
+		notes.forEach((n, i) => {
+			if (n.t1 < tMin || n.t0 > tMax) return;
+			const x0 = X(n.t0) - grow / 2,
+				x1 = X(n.t1) - 3 + grow / 2,
+				y = L.y(n.p) - h / 2;
+			// Connect notes of a melisma.
+			const next = notes[i + 1];
+			if (!L.outline && next && next.s === n.s && next.t0 - n.t1 < 0.01 && next.p !== n.p) {
+				g.globalAlpha = L.alpha * 0.5;
+				g.beginPath();
+				g.moveTo(x1 - h / 2, L.y(n.p));
+				g.lineTo(X(next.t0) - grow / 2 + h / 2, L.y(next.p));
+				g.stroke();
+			}
+			g.globalAlpha = L.alpha * (L.outline ? 0.45 : 0.28);
+			roundRect(g, x0, y, x1 - x0, h, L.outline);
+			if (x0 < nowX) {
+				g.save();
+				pastClip();
+				g.globalAlpha = L.alpha;
+				if (L.outline) {
+					roundRect(g, x0, y, x1 - x0, h, true);
+					g.globalAlpha = 0.15;
+				} else if (n.t0 <= t && t < n.t1) {
+					[g.shadowColor, g.shadowBlur] = [color, 18];
+				}
+				roundRect(g, x0, y, x1 - x0, h);
+				g.restore();
+			}
+		});
+		if (L.lyrics) {
+			g.font = `500 ${L.font}px ${lyricFont}`;
+			const firstNote = new Map<number, Note>();
+			for (const n of notes) if (!firstNote.has(n.s)) firstNote.set(n.s, n);
+			L.v.syllables.forEach((s, i) => {
+				if (s.t1 < tMin - 2 || s.t0 > tMax) return;
+				const x = X(s.t0),
+					y = L.y(firstNote.get(i)!.p) + h / 2 + L.font + 2;
+				const text = s.text + (s.syl === 'b' || s.syl === 'm' ? '-' : '');
+				g.globalAlpha = L.alpha * 0.45;
+				g.fillStyle = '#fff';
+				g.fillText(text, x, y);
+				if (x < nowX) {
+					g.save();
+					pastClip();
+					g.globalAlpha = L.alpha;
+					g.fillStyle = color;
+					g.fillText(text, x, y);
+					g.restore();
+				}
+			});
+		}
+		// Pitch marker on the "now" line.
+		const active = notes.find((n) => n.t0 <= t && t < n.t1);
+		if (active) {
+			g.save();
+			g.fillStyle = g.strokeStyle = color;
+			g.globalAlpha = L.alpha;
+			[g.shadowColor, g.shadowBlur] = [color, 14];
+			g.beginPath();
+			g.arc(nowX, L.y(active.p), h * 0.55, 0, 2 * Math.PI);
+			if (L.outline) g.stroke();
+			else g.fill();
+			g.restore();
+		}
+		g.globalAlpha = 1;
+	}
+
+	if (mic) {
+		// Bars share one pitch axis; in lanes, the singer is taken to sing the first selected part.
+		const L = view === 'overlay' ? layout[0] : layout.find((L) => selected.has(L.v.name))!;
+		drawMic(g, mic, L, X, tMin, nowX, W, H);
+	}
+
+	g.fillStyle = 'rgb(255 255 255 / 0.55)';
+	g.fillRect(nowX - 1, 0, 2, H);
+}
+
+function drawMic(
+	g: CanvasRenderingContext2D,
+	mic: MicTrace,
+	L: VoiceLayout,
+	X: (s: number) => number,
+	tMin: number,
+	nowX: number,
+	W: number,
+	H: number
+) {
+	g.save();
+	g.beginPath();
+	if (L.lane) g.rect(0, L.lane[0], W, L.lane[1]);
+	else g.rect(0, 0, W, H);
+	g.clip();
+	g.strokeStyle = g.fillStyle = '#fff';
+	[g.shadowColor, g.shadowBlur] = ['#fff', 8];
+	g.lineWidth = 3;
+	[g.lineCap, g.lineJoin] = ['round', 'round'];
+	g.beginPath();
+	// Break the line at unpitched points, gaps and jumps, so that only continuous singing connects.
+	let prev: { t: number; p: number } | undefined;
+	for (let i = mic.trail.length - 1; i >= 0; i--) {
+		const pt = mic.trail[i];
+		if (Number.isNaN(pt.p)) prev = undefined;
+		else {
+			const joined = prev && prev.t - pt.t < 0.1 && Math.abs(prev.p - pt.p) < 2;
+			if (joined) g.lineTo(X(pt.t), L.y(pt.p));
+			else g.moveTo(X(pt.t), L.y(pt.p));
+			prev = pt;
+		}
+		if (pt.t < tMin) break;
+	}
+	g.stroke();
+	if (mic.now !== null) {
+		g.beginPath();
+		g.arc(nowX, L.y(mic.now), 6, 0, 2 * Math.PI);
+		g.fill();
+	}
+	g.restore();
+}
+
+export function drawSheet(c: HTMLCanvasElement, sheet: Sheet, t: number, color: string) {
+	const { g, W, H } = prepare(c);
+	g.globalAlpha = 0.85;
+	sheet.draw(g, t, W, H, color);
+	g.globalAlpha = 1;
+}
+
+// The overview is static apart from the playhead and loading progress, so it is drawn once per size.
+const timelineCache = new WeakMap<HTMLCanvasElement, { key: string; base: OffscreenCanvas }>();
+
+export function drawTimeline(
+	c: HTMLCanvasElement,
+	data: PieceData,
+	colors: Record<string, string>,
+	audio: { duration: number; chunkSeconds: number; loaded: boolean[] },
+	t: number
+) {
+	const { g, W, H } = prepare(c);
+	const { duration } = audio;
+	const dpr = devicePixelRatio;
+	const key = `${W}x${H}@${dpr}`;
+	let cached = timelineCache.get(c);
+	if (cached?.key !== key) {
+		const base = new OffscreenCanvas(c.width, c.height);
+		const b = base.getContext('2d')!;
+		b.scale(dpr, dpr);
+		const x = (s: number) => (s / duration) * W;
+		const laneH = H / (data.voices.length + 1);
+		b.fillStyle = 'rgb(255 255 255 / 0.08)';
+		data.measures.forEach((m, i) => {
+			if (i % 4 === 0) b.fillRect(x(m), 0, 1, H);
+		});
+		data.voices.forEach((v, vi) => {
+			b.fillStyle = colors[v.name];
+			for (const s of v.syllables)
+				b.fillRect(x(s.t0), laneH * (vi + 0.5), Math.max(0.5, x(s.t1) - x(s.t0) - 1), laneH * 0.7);
+		});
+		cached = { key, base };
+		timelineCache.set(c, cached);
+	}
+	g.drawImage(cached.base, 0, 0, W, H);
+	// Dim the parts whose audio hasn't arrived yet.
+	g.fillStyle = 'rgb(0 0 0 / 0.55)';
+	audio.loaded.forEach((done, k) => {
+		const x0 = ((k * audio.chunkSeconds) / duration) * W;
+		if (!done) g.fillRect(x0, 0, (audio.chunkSeconds / duration) * W + 1, H);
+	});
+	g.fillStyle = 'white';
+	g.fillRect((t / duration) * W - 1, 0, 2, H);
+}

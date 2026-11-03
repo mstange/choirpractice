@@ -10,7 +10,7 @@ export class Session {
 	selected: string[] = $state([]);
 	#voices: string[] = [];
 	// The default worked on a MacBook with its built-in mic.
-	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0.18));
+	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0.12));
 
 	/**
 	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows

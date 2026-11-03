@@ -161,7 +161,7 @@ export class Mixer {
 
 	now() {
 		if (!this.playing || this.waiting) return this.#offset;
-		const latency = this.#ctx.outputLatency || this.#ctx.baseLatency || 0;
+		const latency = (this.#ctx.baseLatency || 0) + (this.#ctx.outputLatency || 0);
 		return Math.max(this.#offset, this.#ctx.currentTime - this.#startCtx - latency);
 	}
 

@@ -9,6 +9,20 @@ export class Session {
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
 	selected: string[] = $state([]);
 	#voices: string[] = [];
+	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0));
+
+	/**
+	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows
+	 * about. Browsers don't report the input latency, and it depends on the hardware, so the user
+	 * sets it. Kept across visits.
+	 */
+	get micDelay() {
+		return this.#micDelay;
+	}
+	set micDelay(value: number) {
+		this.#micDelay = value;
+		localStorage.setItem('micDelay', String(value));
+	}
 
 	/** Carries the selection over to a piece with these vocal parts. */
 	enter(voices: string[]) {

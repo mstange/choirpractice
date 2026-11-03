@@ -6,10 +6,14 @@ export const NOW_X = 0.2; // position of the "now" line as a fraction of the bar
 
 let lyricFont: string | undefined;
 
-/** The microphone's pitch: past points (NaN where unpitched) and the current pitch. */
+/**
+ * The microphone's pitch: past points (NaN where unpitched) and the current pitch, and how much
+ * earlier than recorded to draw them.
+ */
 export interface MicTrace {
 	trail: { t: number; p: number }[];
 	now: number | null;
+	shift: number;
 }
 
 const pitchRanges = new WeakMap<Note[], [number, number]>();
@@ -215,7 +219,7 @@ export function drawBars(
 		g.globalAlpha = 1;
 	}
 
-	if (mic) drawMic(g, mic, y, X, tMin, nowX);
+	if (mic) drawMic(g, mic, y, (s) => X(s - mic.shift), tMin + mic.shift, nowX);
 
 	g.fillStyle = 'rgb(255 255 255 / 0.55)';
 	g.fillRect(nowX - 1, 0, 2, H);

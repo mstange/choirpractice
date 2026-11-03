@@ -67,7 +67,7 @@
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
 	const partButtons: Record<string, HTMLButtonElement> = {};
-	const micTrace: MicTrace = { trail: [], now: null };
+	const micTrace: MicTrace = { trail: [], now: null, shift: 0 };
 
 	const sheets = engravings.map((e) => new Sheet(e, fileUrl(e.file)));
 	// A single selected part gets its own engraving; several get the one with all vocal parts.
@@ -122,6 +122,7 @@
 	/** Adds the mic's current pitch to the trail, which follows the playhead. */
 	function recordMic() {
 		micTrace.now = mic.read();
+		micTrace.shift = session.micDelay;
 		if (!mixer.playing || mixer.waiting) return;
 		const at = t - mic.delay,
 			{ trail } = micTrace;
@@ -363,6 +364,20 @@
 					step="0.01"
 					bind:value={session.emphasis}
 				/>
+				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
+					>Mic delay</label
+				>
+				<div class="mic-delay">
+					<input
+						id="mic-delay"
+						type="range"
+						min="0"
+						max="0.5"
+						step="0.01"
+						bind:value={session.micDelay}
+					/>
+					<output for="mic-delay">{Math.round(session.micDelay * 1000)} ms</output>
+				</div>
 				{#each accompaniment as name (name)}
 					<label for="accomp-{name}">{name}</label>
 					<input
@@ -639,6 +654,22 @@
 	}
 	.mix-panel input {
 		accent-color: #ddd;
+	}
+	.mic-delay {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.mic-delay input {
+		flex: 1;
+		min-width: 0;
+	}
+	.mic-delay output {
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		min-width: 4em;
+		text-align: right;
+		opacity: 0.7;
 	}
 
 	.hint {

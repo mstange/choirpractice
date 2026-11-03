@@ -12,9 +12,10 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 
 ## Layout
 
-- `media/<season>/`: the data of a season's pieces. It is not checked in (see `.gitignore`).
+- `media/<season>/`: the data of a season's pieces. It is not checked in (see `.gitignore`), except for `media/demo/`.
   - `pieces.json` lists the pieces offered in the piece menu.
   - `<slug>/` holds the data of one piece, written by `tools/build.sh`.
+  - `media/demo/` is a season with one piece, Frère Jacques as a round in four parts, so that the page works without a licensed score. Its score is `media/demo/frere-jacques.mscz`; rebuild it with `tools/build.sh media/demo/frere-jacques.mscz demo/frere-jacques`. The page links to it as `#/demo`.
 - `tools/build.sh <score.mscz> <season>/<slug>`: the whole pipeline for one score. It writes `media/<season>/<slug>/piece.json`, `media/<season>/<slug>/audio/<part>/<k>.mp3`, the chunks of each part's stem, and `media/<season>/<slug>/engraving/<name>.svg`, the sheet music.
 - `tools/extract.py`: reads MuseScore's MusicXML and MIDI exports and writes `piece.json`, which holds:
   - title, subtitle, credits, from the score's title frame (the MusicXML export leaves it out), or else from its metadata in File › Properties;
@@ -91,6 +92,7 @@ The page and the media are hosted separately: the page on any static host, built
   - a CORS rule that allows `GET` from the page's origin;
   - no directory listing, which is R2's default.
 - **Season keys:** a season is uploaded under a random key instead of its name, for example from `openssl rand -hex 16`. Whoever has the link `https://app.example.org/#/<key>/` can open the season, so it is meant for people who bought the sheet music. A new season gets a new key. The key is in the URL fragment, which browsers don't send to the page's host.
+- **Demo:** upload `media/demo` under the name `demo`, without a key.
 - **Upload** a season with [rclone](https://rclone.org/) configured for R2. Uploads replace files under the same names, so every file is revalidated on each request:
   ```sh
   rclone sync media/<season> r2:<bucket>/<key> --header-upload "Cache-Control: no-cache"

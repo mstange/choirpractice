@@ -1,8 +1,10 @@
-# Piece data (tools/build.sh), not checked in because the scores are licensed
-/media/
+# Piece data (tools/build.sh), not checked in because the scores are licensed, except for the demo
+/media/*
+!/media/demo/
 
 # MuseScore sources and intermediate exports, if copied here for building
 *.mscz
+!/media/demo/*.mscz
 *.mscx
 *.wav
 

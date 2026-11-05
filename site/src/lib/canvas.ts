@@ -3,6 +3,14 @@ import type { Note, PieceData, Voice } from './types.ts';
 
 export const BAR_SECONDS = 10; // seconds of music visible across the bar view
 export const NOW_X = 0.2; // position of the "now" line as a fraction of the bar view width
+const LOOP_RGB = '255 204 0';
+
+/** Measures to repeat: from measure `from` up to measure `to`, exclusive. Counted from 0. */
+export interface Loop {
+	from: number;
+	to: number;
+	on: boolean;
+}
 
 let lyricFont: string | undefined;
 
@@ -49,12 +57,24 @@ interface VoiceLayout {
 	z: number;
 }
 
+/** Horizontal layout of the bar view and its ruler, with time `t` on the "now" line. */
+function timeAxis(W: number, t: number) {
+	const nowX = W * NOW_X,
+		pps = W / BAR_SECONDS;
+	return {
+		nowX,
+		X: (s: number) => nowX + (s - t) * pps,
+		tMin: t - nowX / pps,
+		tMax: t + (W - nowX) / pps
+	};
+}
+
 /** Vertical layout of the bar view: one pitch axis shared by all voices. */
 function pitchAxis(voices: Voice[], H: number) {
 	const ranges = voices.map((v) => pitchRange(v.notes));
 	const lo = Math.min(...ranges.map((r) => r[0])),
 		hi = Math.max(...ranges.map((r) => r[1]));
-	const top = 34,
+	const top = 38,
 		bottom = H - 34;
 	const step = (bottom - top) / (hi - lo + 2);
 	return { lo: lo - 1, hi: hi + 1, step, y: (p: number) => bottom - (p - lo + 1) * step };
@@ -100,30 +120,32 @@ export function drawBars(
 	colors: Record<string, string>,
 	t: number,
 	selected: Set<string>,
-	mic: MicTrace | null
+	mic: MicTrace | null,
+	loop: Loop | null
 ) {
 	lyricFont ??= getComputedStyle(document.documentElement).getPropertyValue('--lyric-font');
 	const { g, W, H } = prepare(c);
-	const nowX = W * NOW_X,
-		pps = W / BAR_SECONDS;
-	const X = (s: number) => nowX + (s - t) * pps;
-	const tMin = t - nowX / pps,
-		tMax = t + (W - nowX) / pps;
+	const { nowX, X, tMin, tMax } = timeAxis(W, t);
 	const axis = pitchAxis(data.voices, H),
 		y = axis.y;
 	const layout = barLayout(data.voices, selected, axis.step);
 	const font = selected.size > 1 ? 14 : 20;
 
-	// Measure lines and numbers.
-	g.font = '12px system-ui, sans-serif';
-	data.measures.forEach((m, i) => {
+	if (loop?.on) {
+		const x0 = X(data.measures[loop.from]),
+			x1 = X(data.measures[loop.to]);
+		g.fillStyle = `rgb(${LOOP_RGB} / 0.05)`;
+		g.fillRect(x0, 0, x1 - x0, H);
+		g.fillStyle = `rgb(${LOOP_RGB} / 0.4)`;
+		g.fillRect(x0, 0, 1, H);
+		g.fillRect(x1 - 1, 0, 1, H);
+	}
+
+	g.fillStyle = 'rgb(255 255 255 / 0.07)';
+	for (const m of data.measures) {
 		const x = X(m);
-		if (x < -40 || x > W) return;
-		g.fillStyle = 'rgb(255 255 255 / 0.07)';
-		g.fillRect(x, 0, 1, H);
-		g.fillStyle = 'rgb(255 255 255 / 0.3)';
-		if (i < data.measures.length - 1) g.fillText(String(i + 1), x + 4, 14);
-	});
+		if (x >= 0 && x <= W) g.fillRect(x, 0, 1, H);
+	}
 
 	// Pitch grid: one faint line per semitone, labelled at every C.
 	for (let p = axis.lo; p <= axis.hi; p++) {
@@ -225,6 +247,32 @@ export function drawBars(
 	g.fillRect(nowX - 1, 0, 2, H);
 }
 
+/** The ruler above the bar view: measure numbers and the loop. */
+export function drawRuler(c: HTMLCanvasElement, measures: number[], t: number, loop: Loop | null) {
+	const { g, W, H } = prepare(c);
+	const { nowX, X } = timeAxis(W, t);
+	g.fillStyle = 'rgb(255 255 255 / 0.05)';
+	g.fillRect(0, 0, W, H);
+	if (loop) {
+		const x0 = X(measures[loop.from]);
+		g.fillStyle = loop.on ? `rgb(${LOOP_RGB})` : 'rgb(255 255 255 / 0.22)';
+		g.beginPath();
+		g.roundRect(x0, 3, X(measures[loop.to]) - x0, H - 6, 4);
+		g.fill();
+	}
+	g.font = '12px system-ui, sans-serif';
+	g.textBaseline = 'middle';
+	for (let i = 0; i < measures.length - 1; i++) {
+		const x = X(measures[i]);
+		if (x < -40 || x > W) continue;
+		const looped = loop?.on && loop.from <= i && i < loop.to;
+		g.fillStyle = looped ? 'rgb(0 0 0 / 0.65)' : 'rgb(255 255 255 / 0.4)';
+		g.fillText(String(i + 1), x + 5, H / 2);
+	}
+	g.fillStyle = 'rgb(255 255 255 / 0.55)';
+	g.fillRect(nowX - 1, 0, 2, H);
+}
+
 function drawMic(
 	g: CanvasRenderingContext2D,
 	mic: MicTrace,
@@ -282,7 +330,8 @@ export function drawTimeline(
 	data: PieceData,
 	colors: Record<string, string>,
 	audio: { duration: number; chunkSeconds: number; loaded: boolean[] },
-	t: number
+	t: number,
+	loop: [number, number] | null
 ) {
 	const { g, W, H } = prepare(c);
 	const { duration } = audio;
@@ -314,6 +363,13 @@ export function drawTimeline(
 		const x0 = ((k * audio.chunkSeconds) / duration) * W;
 		if (!done) g.fillRect(x0, 0, (audio.chunkSeconds / duration) * W + 1, H);
 	});
+	if (loop) {
+		const [x0, x1] = loop.map((s) => (s / duration) * W);
+		g.fillStyle = `rgb(${LOOP_RGB} / 0.12)`;
+		g.fillRect(x0, 0, x1 - x0, H);
+		g.fillStyle = `rgb(${LOOP_RGB})`;
+		g.fillRect(x0, 0, x1 - x0, 3);
+	}
 	g.fillStyle = 'white';
 	g.fillRect((t / duration) * W - 1, 0, 2, H);
 }

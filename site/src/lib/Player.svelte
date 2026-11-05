@@ -7,8 +7,10 @@
 		BAR_SECONDS,
 		NOW_X,
 		drawBars,
+		drawRuler,
 		drawSheet,
 		drawTimeline,
+		type Loop,
 		type MicTrace
 	} from './canvas.ts';
 	import { assignColors } from './colors.ts';
@@ -87,6 +89,7 @@
 	});
 	let t = $state(0);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
+	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
 	const partButtons: Record<string, HTMLButtonElement> = {};
 	const micTrace: MicTrace = { trail: [], now: null, shift: 0 };
@@ -107,6 +110,11 @@
 	const sheetHeight = $derived(
 		sheet && Math.min((sheet.info.height / sheet.info.spatium) * SPATIUM_PX, windowHeight / 3)
 	);
+	let loop = $state<Loop | null>(null);
+	const loopTimes = $derived<[number, number] | null>(
+		loop?.on ? [measures[loop.from], measures[loop.to]] : null
+	);
+	$effect(() => mixer.setLoop(loopTimes));
 	const selectedSet = $derived(new Set(session.selected));
 	const measure = $derived(measureAt(t));
 	const hue = $derived(
@@ -129,11 +137,13 @@
 			t = mixer.now();
 			if (mixer.playing && !mixer.held && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
-			if (view !== 'lyrics' && barsCanvas)
-				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
+			if (view !== 'lyrics' && barsCanvas && rulerCanvas) {
+				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null, loop);
+				drawRuler(rulerCanvas, measures, t, loop);
+			}
 			if (sheet && sheetCanvas)
 				drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]], sheetFrozen);
-			drawTimeline(timelineCanvas, piece, colors, mixer, t);
+			drawTimeline(timelineCanvas, piece, colors, mixer, t, loopTimes);
 			raf = requestAnimationFrame(frame);
 		});
 		return () => {
@@ -167,8 +177,9 @@
 	}
 
 	function togglePlay() {
-		if (mixer.playing) mixer.pause();
-		else mixer.play();
+		if (mixer.playing) return mixer.pause();
+		if (loopTimes && (t < loopTimes[0] || t >= loopTimes[1])) seek(loopTimes[0]);
+		mixer.play();
 	}
 
 	// The view is part of the URL. Switching it replaces the history entry, so that Back goes to the
@@ -265,6 +276,78 @@
 	);
 	const scrubTimeline = scrub((x, w) => (x / w) * mixer.duration);
 
+	/**
+	 * The ruler above the bars holds the loop. Dragging along it makes a loop over the measures it
+	 * covers, dragging the loop's ends or middle resizes or moves it, and tapping it turns looping
+	 * on or off. Tapping elsewhere seeks to that measure.
+	 */
+	function loopRuler(el: HTMLElement) {
+		const last = measures.length - 1;
+		const xOf = (e: PointerEvent) => e.clientX - el.getBoundingClientRect().left;
+		const timeAt = (x: number) => t + (x / el.clientWidth - NOW_X) * BAR_SECONDS;
+		const xAt = (time: number) => (NOW_X + (time - t) / BAR_SECONDS) * el.clientWidth;
+		// The start of the measure nearest to a time.
+		const nearest = (time: number) => {
+			const m = measureAt(time);
+			return time - measures[m] > measures[m + 1] - time ? m + 1 : m;
+		};
+		const hit = (x: number, touch: boolean) => {
+			if (!loop) return 'new';
+			const x0 = xAt(measures[loop.from]),
+				x1 = xAt(measures[loop.to]);
+			const reach = Math.min(touch ? 14 : 6, (x1 - x0) / 3);
+			if (Math.abs(x - x0) < reach) return 'from';
+			if (Math.abs(x - x1) < reach) return 'to';
+			return x0 < x && x < x1 ? 'move' : 'new';
+		};
+		const onhover = (e: PointerEvent) => {
+			if (e.buttons) return;
+			const mode = hit(xOf(e), e.pointerType !== 'mouse');
+			el.style.cursor = mode === 'from' || mode === 'to' ? 'ew-resize' : 'pointer';
+		};
+		const ondown = (down: PointerEvent) => {
+			if (!down.isPrimary || down.button !== 0) return;
+			el.setPointerCapture(down.pointerId);
+			const x0 = xOf(down),
+				t0 = timeAt(x0),
+				mode = hit(x0, down.pointerType !== 'mouse'),
+				start = loop;
+			let moved = false;
+			const update = (e: PointerEvent) => {
+				moved ||= Math.abs(xOf(e) - x0) > 4;
+				if (!moved) return;
+				const time = timeAt(xOf(e));
+				if (mode === 'new' || !start) {
+					const [a, b] = [measureAt(t0), measureAt(time)];
+					loop = { from: Math.min(a, b), to: Math.max(a, b) + 1, on: true };
+				} else if (mode === 'from') {
+					loop = { ...start, from: Math.min(nearest(time), start.to - 1) };
+				} else if (mode === 'to') {
+					loop = { ...start, to: Math.max(nearest(time), start.from + 1) };
+				} else {
+					const d = Math.max(-start.from, Math.min(nearest(time) - nearest(t0), last - start.to));
+					loop = { ...start, from: start.from + d, to: start.to + d };
+				}
+			};
+			const done = new AbortController();
+			const end = (e: PointerEvent) => {
+				done.abort();
+				if (moved || e.type !== 'pointerup') return;
+				if (mode === 'new' || !start) seek(measures[measureAt(timeAt(xOf(e)))]);
+				else loop = { ...start, on: !start.on };
+			};
+			el.addEventListener('pointermove', update, { signal: done.signal });
+			el.addEventListener('pointerup', end, { signal: done.signal });
+			el.addEventListener('pointercancel', end, { signal: done.signal });
+		};
+		el.addEventListener('pointermove', onhover);
+		el.addEventListener('pointerdown', ondown);
+		return () => {
+			el.removeEventListener('pointermove', onhover);
+			el.removeEventListener('pointerdown', ondown);
+		};
+	}
+
 	function onkeydown(e: KeyboardEvent) {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
 		const tag = (e.target as HTMLElement).tagName;
@@ -280,6 +363,8 @@
 			session.selected = voiceNames;
 		} else if (digit && voiceNames[+digit - 1]) {
 			pick(voiceNames[+digit - 1], e.shiftKey);
+		} else if ((e.key === 'l' || e.key === 'L') && loop) {
+			loop = { ...loop, on: !loop.on };
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
@@ -354,6 +439,12 @@
 				title="Drag to scroll, click to seek"
 				bind:this={barsCanvas}
 				{@attach scrubBars}
+			></canvas>
+			<canvas
+				class="ruler"
+				title="Drag to set a loop, click it to turn looping on or off"
+				bind:this={rulerCanvas}
+				{@attach loopRuler}
 			></canvas>
 		{/if}
 	</main>
@@ -532,8 +623,8 @@
 
 		<div class="hint">
 			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
-			all parts · V: switch view · M: microphone · drag the notes to scroll, click a note or
-			syllable to jump there
+			all parts · V: switch view · M: microphone · L: loop on/off · drag the notes to scroll, click
+			a note or syllable to jump there · drag along the measure numbers to set a loop
 		</div>
 	</footer>
 </div>
@@ -601,6 +692,16 @@
 		width: 100%;
 		height: 100%;
 		cursor: grab;
+		touch-action: none;
+	}
+
+	.ruler {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 24px;
+		cursor: pointer;
 		touch-action: none;
 	}
 

@@ -12,6 +12,10 @@ const AHEAD = 3; // chunks after the playhead's chunk to keep decoded
  * decoded audio takes about ten times the space. Every chunk is scheduled as its own source node
  * as soon as it is decoded for all parts. The context runs at the stems' sample rate, so chunks
  * line up sample-exactly.
+ *
+ * A loop is scheduled the same way: a run of source nodes counts its own time on through every
+ * repetition, and the part of a chunk up to the loop's end is followed by the part from its start.
+ * The decoded window follows playback around the loop.
  */
 export class Mixer {
 	/** Whether the user wants playback, even while waiting for audio. */
@@ -34,16 +38,24 @@ export class Mixer {
 	#mp3s: Map<string, ArrayBuffer>[];
 	#decoding: Set<string>[];
 	#decodes = 0;
-	/** The first chunk of the decoded window. */
-	#from = 0;
+	/** The chunks to keep decoded, in the order playback reaches them, and where they start. */
+	#window: number[] = [];
+	#at = 0;
 	#chunks: Map<string, AudioBuffer>[];
-	#sources: AudioBufferSourceNode[] = [];
+	#sources = new Set<AudioBufferSourceNode>();
 	/** The position while stopped, or where the current run of source nodes started. */
 	#offset = 0;
+	/** The context time at which the current run's own time is 0. */
 	#startCtx = 0;
-	/** The first chunk not yet scheduled in the current run. */
-	#next = 0;
+	/**
+	 * Where the next segment to schedule starts, in the score and in the run's own time, which goes
+	 * on counting through the repetitions of the loop. In sample frames.
+	 */
+	#nextS = 0;
+	#nextV = 0;
 	#run = 0;
+	/** The range to repeat, in sample frames. */
+	#loop: [number, number] | null = null;
 
 	constructor(partNames: string[], info: AudioInfo) {
 		this.#info = info;
@@ -73,7 +85,7 @@ export class Mixer {
 				if (!res.ok) throw new Error(`${res.url}: ${res.status} ${res.statusText}`);
 				this.#mp3s[k].set(name, await res.arrayBuffer());
 				this.loaded[k] = this.#mp3s[k].size === this.#names.length;
-				this.#decode(this.#from);
+				this.#decode(this.#at);
 			}
 		};
 		try {
@@ -87,15 +99,15 @@ export class Mixer {
 		if (!signal?.aborted && !this.error) this.error = String((e as Error).message ?? e);
 	}
 
-	/** Drops the decoded chunks outside the window from chunk `from` on and decodes the missing ones. */
-	#decode(from = this.#chunkAt(this.now())) {
+	/** Drops the decoded chunks outside the window that playback from `at` on needs, and decodes the missing ones. */
+	#decode(at = this.now()) {
 		if (this.error) return;
-		this.#from = from;
-		const to = Math.min(from + AHEAD, this.loaded.length - 1);
+		this.#at = at;
+		const window = (this.#window = this.#upcoming(at));
 		this.#chunks.forEach((m, k) => {
-			if (k < from || k > to) m.clear();
+			if (!window.includes(k)) m.clear();
 		});
-		for (let k = from; k <= to; k++) {
+		for (const k of window) {
 			for (const [name, mp3] of this.#mp3s[k]) {
 				if (this.#decodes >= DECODES) return;
 				if (this.#chunks[k].has(name) || this.#decoding[k].has(name)) continue;
@@ -109,10 +121,30 @@ export class Mixer {
 					.finally(() => {
 						this.#decoding[k].delete(name);
 						this.#decodes--;
-						this.#decode(this.#from);
+						this.#decode(this.#at);
 					});
 			}
 		}
+	}
+
+	/** The chunk at `at` and the next AHEAD chunks that playback goes through, around the loop. */
+	#upcoming(at: number) {
+		const { chunk, rate } = this.#info;
+		const loop = this.#loopFrom(Math.round(at * rate));
+		const last = loop ? Math.floor((loop[1] - 1) / chunk) : this.loaded.length - 1;
+		const window: number[] = [];
+		for (let k = this.#chunkAt(at); window.length <= AHEAD && !window.includes(k);) {
+			window.push(k);
+			if (k < last) k++;
+			else if (loop) k = Math.floor(loop[0] / chunk);
+			else break;
+		}
+		return window;
+	}
+
+	/** The loop, if playback from frame `s` on runs into it. */
+	#loopFrom(s: number) {
+		return this.#loop && s < this.#loop[1] ? this.#loop : null;
 	}
 
 	/** The next chunk to fetch: the first missing one from the playhead on, then from the start. */
@@ -132,7 +164,7 @@ export class Mixer {
 
 	/** Stores a decoded chunk without the padding around it, and schedules it if it is due. */
 	#add(name: string, k: number, decoded: AudioBuffer) {
-		if (k < this.#from || k > this.#from + AHEAD) return; // the playhead moved on while decoding
+		if (!this.#window.includes(k)) return; // the playhead moved on while decoding
 		const { length, chunk, pad, rate } = this.#info;
 		const start = k * chunk,
 			len = Math.min(chunk, length - start),
@@ -150,7 +182,7 @@ export class Mixer {
 		this.#chunks[k].set(name, buffer);
 		if (!this.#decoded(k)) return;
 		if (this.waiting && k === this.#chunkAt(this.#offset)) this.#start();
-		else if (this.playing && !this.waiting && k === this.#next) this.#schedule();
+		else if (this.playing && !this.waiting) this.#schedule();
 	}
 
 	#decoded(k: number) {
@@ -158,13 +190,18 @@ export class Mixer {
 	}
 
 	#chunkAt(t: number) {
-		return Math.min(Math.floor(t / this.chunkSeconds), this.loaded.length - 1);
+		const { chunk, rate } = this.#info;
+		return Math.min(Math.floor(Math.round(t * rate) / chunk), this.loaded.length - 1);
 	}
 
 	now() {
 		if (!this.playing || this.waiting) return this.#offset;
 		const latency = (this.#ctx.baseLatency || 0) + (this.#ctx.outputLatency || 0);
-		return Math.max(this.#offset, this.#ctx.currentTime - this.#startCtx - latency);
+		const rate = this.#info.rate,
+			v = Math.max(this.#offset, this.#ctx.currentTime - this.#startCtx - latency) * rate;
+		const loop = this.#loopFrom(Math.round(this.#offset * rate));
+		if (!loop || v < loop[1]) return v / rate;
+		return (loop[0] + ((v - loop[1]) % (loop[1] - loop[0]))) / rate;
 	}
 
 	play() {
@@ -179,37 +216,51 @@ export class Mixer {
 	#start() {
 		const k = this.#chunkAt(this.#offset);
 		this.waiting = this.#held || !this.#decoded(k);
-		this.#decode(k);
+		this.#decode(this.#offset);
 		if (this.waiting) return;
 		const rate = this.#info.rate;
 		this.#startCtx = Math.ceil((this.#ctx.currentTime + 0.05) * rate) / rate - this.#offset;
-		this.#next = k;
+		this.#nextS = this.#nextV = Math.round(this.#offset * rate);
 		this.#schedule();
 	}
 
-	/** Schedules the consecutive chunks that have arrived, starting at #next. */
+	/**
+	 * Schedules the segments that have arrived, from #nextS on, up to AHEAD chunks ahead. A segment
+	 * is a chunk from #nextS on, up to the loop's end if that comes first.
+	 */
 	#schedule() {
-		const run = this.#run;
-		for (; this.#next < this.loaded.length && this.#decoded(this.#next); this.#next++) {
-			const k = this.#next,
-				t0 = k * this.chunkSeconds,
-				begin = Math.max(t0, this.#offset),
-				when = this.#startCtx + begin;
-			// Too late to continue seamlessly; the end of the previous chunk restarts playback.
-			if (k > this.#chunkAt(this.#offset) && when < this.#ctx.currentTime + 0.02) break;
-			for (const [name, buffer] of this.#chunks[k]) {
+		const run = this.#run,
+			{ chunk, length, rate } = this.#info,
+			first = Math.round(this.#offset * rate),
+			horizon = this.#ctx.currentTime + AHEAD * this.chunkSeconds;
+		while (this.#nextS < length) {
+			const s = this.#nextS,
+				k = Math.floor(s / chunk),
+				when = this.#startCtx + this.#nextV / rate;
+			if (!this.#decoded(k) || when > horizon) break;
+			// Too late to continue seamlessly; the end of the previous segment restarts playback.
+			if (this.#nextV > first && when < this.#ctx.currentTime + 0.02) break;
+			const loop = this.#loopFrom(s);
+			const end = Math.min((k + 1) * chunk, length, loop ? loop[1] : Infinity);
+			const next = loop && end === loop[1] ? loop[0] : end;
+			const group = [...this.#chunks[k]].map(([name, buffer]) => {
 				const src = new AudioBufferSourceNode(this.#ctx, { buffer });
 				src.connect(this.#gains.get(name)!);
-				src.start(when, begin - t0);
-				this.#sources.push(src);
-			}
-			const last = this.#sources[this.#sources.length - 1];
-			last.onended = () => {
-				if (run === this.#run) this.#decode(k + 1);
-				if (run !== this.#run || k !== this.#next - 1 || this.#next >= this.loaded.length) return;
+				src.start(when, (s - k * chunk) / rate, (end - s) / rate);
+				this.#sources.add(src);
+				return src;
+			});
+			this.#nextS = next;
+			this.#nextV += end - s;
+			group[group.length - 1].onended = () => {
+				for (const src of group) this.#sources.delete(src);
+				if (run !== this.#run) return;
+				this.#decode(next / rate);
+				this.#schedule();
+				if (this.#sources.size || this.#nextS >= length) return;
 				// The audio ran out before the next chunk arrived.
 				this.#stop();
-				this.#offset = this.#next * this.chunkSeconds;
+				this.#offset = this.#nextS / rate;
 				this.#start();
 			};
 		}
@@ -218,7 +269,7 @@ export class Mixer {
 	#stop() {
 		this.#run++;
 		for (const s of this.#sources) s.stop();
-		this.#sources = [];
+		this.#sources = new Set();
 	}
 
 	get held() {
@@ -251,6 +302,23 @@ export class Mixer {
 		this.pause();
 		const rate = this.#info.rate;
 		this.#offset = Math.round(Math.min(Math.max(0, t), this.duration) * rate) / rate;
+		if (wasPlaying) this.play();
+		else this.#decode();
+	}
+
+	/**
+	 * Repeats the range from `loop[0]` to `loop[1]` seconds whenever playback reaches its end, or
+	 * stops repeating if null.
+	 */
+	setLoop(loop: [number, number] | null) {
+		const rate = this.#info.rate;
+		const frames =
+			loop && (loop.map((t) => Math.round(Math.min(t, this.duration) * rate)) as [number, number]);
+		if (String(frames) === String(this.#loop)) return;
+		// Restart with the new loop, since the current run's timing depends on the old one.
+		const wasPlaying = this.playing;
+		this.pause();
+		this.#loop = frames;
 		if (wasPlaying) this.play();
 		else this.#decode();
 	}

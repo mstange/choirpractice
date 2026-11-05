@@ -297,11 +297,15 @@ export class Mixer {
 		this.playing = this.waiting = false;
 	}
 
+	/** The first sample frame at or after `t`, so that seeking to a note or measure lands on it. */
+	#frameAt(t: number) {
+		return Math.ceil(Math.min(Math.max(0, t), this.duration) * this.#info.rate);
+	}
+
 	seek(t: number) {
 		const wasPlaying = this.playing;
 		this.pause();
-		const rate = this.#info.rate;
-		this.#offset = Math.round(Math.min(Math.max(0, t), this.duration) * rate) / rate;
+		this.#offset = this.#frameAt(t) / this.#info.rate;
 		if (wasPlaying) this.play();
 		else this.#decode();
 	}
@@ -311,9 +315,7 @@ export class Mixer {
 	 * stops repeating if null.
 	 */
 	setLoop(loop: [number, number] | null) {
-		const rate = this.#info.rate;
-		const frames =
-			loop && (loop.map((t) => Math.round(Math.min(t, this.duration) * rate)) as [number, number]);
+		const frames = loop && (loop.map((t) => this.#frameAt(t)) as [number, number]);
 		if (String(frames) === String(this.#loop)) return;
 		// Restart with the new loop, since the current run's timing depends on the old one.
 		const wasPlaying = this.playing;

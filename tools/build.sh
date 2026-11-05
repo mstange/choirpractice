@@ -21,7 +21,7 @@ unzip -q "$1" -d "$WORK/src"
 "$MSCORE" -o "$WORK/score.mid" "$1" >/dev/null 2>&1
 "$MSCORE" -o "$WORK/score.musicxml" "$1" >/dev/null 2>&1
 python3 -I "$TOOLS/extract.py" "$WORK/score.musicxml" "$WORK/score.mid" "$WORK/src" "$PIECE/piece.json"
-python3 -I "$TOOLS/engrave.py" "$MSCORE" "$WORK/src" "$WORK/score.musicxml" "$WORK/score.mid" "$PIECE/piece.json" "$WORK"
+python3 -I "$TOOLS/engrave.py" "$MSCORE" "$1" "$WORK/src" "$WORK/score.musicxml" "$WORK/score.mid" "$PIECE/piece.json" "$WORK"
 
 python3 -I "$TOOLS/make_stems.py" "$WORK/src" "$PIECE/piece.json" "$WORK" > "$WORK/variants"
 while IFS="$(printf '\t')" read -r score name; do

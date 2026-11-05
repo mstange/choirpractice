@@ -4,6 +4,8 @@ import { Mic } from './mic.svelte.ts';
 export class Session {
 	readonly mic = new Mic();
 	emphasis = $state(0.7);
+	/** Whether a piano doubles the selected parts, so that their notes' starts are easier to hear. */
+	extraPiano = $state(true);
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
 	selected: string[] = $state([]);
 	#voices: string[] = [];
@@ -35,7 +37,7 @@ export class Session {
 
 	/**
 	 * Starts the piece saved under `key`, with these vocal parts: restores the selection and the
-	 * emphasis saved for it, or else carries them over from the previous piece. Returns what else
+	 * emphasis and extra piano saved for it, or else carries them over from the previous piece. Returns what else
 	 * was saved for it.
 	 */
 	enter(key: string, voices: string[]): Partial<Saved> {
@@ -50,6 +52,7 @@ export class Session {
 		this.selected = matched.length ? matched : [voices[0]];
 		this.#voices = voices;
 		this.emphasis = saved?.emphasis ?? this.emphasis;
+		this.extraPiano = saved?.extraPiano ?? this.extraPiano;
 		return saved ?? {};
 	}
 }
@@ -61,6 +64,7 @@ export class Session {
 export type Saved = {
 	selected: string[];
 	emphasis: number;
+	extraPiano: boolean;
 	levels: Record<string, number>;
 	speed: number;
 	instruments: Record<string, number>;

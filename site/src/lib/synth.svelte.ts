@@ -6,6 +6,8 @@ import type { Part } from './types.ts';
 
 /** Seconds between asking the audio thread to start playing and the start. */
 const LEAD = 0.05;
+/** The General MIDI program that can double the vocal parts. */
+const PIANO = 0;
 
 /**
  * Plays a piece's score.mid with soundfont instruments, each part on its MIDI channels.
@@ -14,6 +16,9 @@ const LEAD = 0.05;
  * at which sample frame to start, so it knows the position of every later frame. A worker reads
  * the MIDI file and decodes every soundfont sample before the audio thread needs it, only the ones
  * that the notes of a channel use. Until the instruments have loaded, playing waits.
+ *
+ * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's 16,
+ * which stays silent until setPianoGain().
  */
 export class Synth {
 	/** Whether the user wants playback, even while waiting. */
@@ -40,6 +45,8 @@ export class Synth {
 	#soundfontUrl: (file: string) => string;
 	/** Per channel, the [key, velocity] of its notes, each once. */
 	#notes = new Map<number, [number, number][]>();
+	/** Per vocal part, the channel of its piano. */
+	#pianos = new Map<string, number>();
 	/** Per channel, a count of program changes, so that only the latest one takes effect. */
 	#changes = new Map<number, number>();
 	#ready = false;
@@ -55,6 +62,13 @@ export class Synth {
 		this.#parts = parts;
 		this.duration = duration;
 		this.#soundfontUrl = soundfontUrl;
+		// Channel 9 of every 16 plays drum kits.
+		let next = 16;
+		for (const { name, vocal, channels } of parts) {
+			if (!vocal || !channels.length) continue;
+			if (next % 16 === 9) next++;
+			this.#pianos.set(name, next++);
+		}
 		this.#worker.onmessage = ({ data }) => {
 			const [resolve, reject] = this.#requests.get(data.id)!;
 			this.#requests.delete(data.id);
@@ -82,7 +96,22 @@ export class Synth {
 				type: 'midi',
 				url: midiUrl
 			});
-			this.#post({ type: 'score', events, notes });
+			// The channel of each score channel's piano.
+			const piano = new Map(
+				this.#parts.flatMap((p) =>
+					this.#pianos.has(p.name) ? p.channels.map((ch) => [ch, this.#pianos.get(p.name)!]) : []
+				)
+			);
+			const doubled = events.flatMap((e) => {
+				const type = e.data[0] & 0xf0,
+					ch = piano.get(e.data[0] & 0x0f);
+				if (ch === undefined || (type !== 0x80 && type !== 0x90)) return [e];
+				return [e, { t: e.t, data: [type, ...e.data.slice(1)], offset: ch }];
+			});
+			notes.push(
+				...notes.filter((n) => piano.has(n.ch)).map((n) => ({ ...n, ch: piano.get(n.ch)! }))
+			);
+			this.#post({ type: 'score', events: doubled, notes });
 			for (const n of notes) {
 				const list = this.#notes.get(n.ch) ?? [];
 				if (!list.some(([k, v]) => k === n.key && v === n.vel)) list.push([n.key, n.vel]);
@@ -98,6 +127,7 @@ export class Synth {
 				for (const ch of channels)
 					loads.push(this.#setProgram(ch, replaced ?? programs.get(ch) ?? 0));
 			}
+			for (const ch of this.#pianos.values()) loads.push(this.#setProgram(ch, PIANO));
 			await Promise.all(loads);
 			this.#ready = true;
 			if (this.playing && this.waiting) this.#start();
@@ -252,6 +282,12 @@ export class Synth {
 	setGain(part: string, gain: number) {
 		for (const ch of this.#parts.find((p) => p.name === part)?.channels ?? [])
 			this.#post({ type: 'gain', ch, gain });
+	}
+
+	/** Sets the gain of the piano that doubles a vocal part. */
+	setPianoGain(part: string, gain: number) {
+		const ch = this.#pianos.get(part);
+		if (ch !== undefined) this.#post({ type: 'gain', ch, gain });
 	}
 
 	close() {

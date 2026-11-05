@@ -45,6 +45,7 @@
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
+	const PIANO_GAIN = 0.5; // the gain of the piano that doubles a selected part
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -87,6 +88,7 @@
 		const saved: Saved = {
 			selected: session.selected,
 			emphasis: session.emphasis,
+			extraPiano: session.extraPiano,
 			levels: accompLevels,
 			speed,
 			instruments
@@ -135,6 +137,8 @@
 			const unselected = 1 - 0.9 * session.emphasis;
 			const gain = !vocal ? accompLevels[name] : session.selected.includes(name) ? 1 : unselected;
 			synth.setGain(name, gain);
+			const piano = session.extraPiano && session.selected.includes(name);
+			if (vocal) synth.setPianoGain(name, piano ? PIANO_GAIN : 0);
 		}
 	});
 
@@ -674,6 +678,12 @@
 					step="0.01"
 					bind:value={session.emphasis}
 				/>
+				<label
+					for="extra-piano"
+					title="A piano also plays the selected parts, to make their notes' starts clearer"
+					>Extra Piano</label
+				>
+				<input id="extra-piano" type="checkbox" bind:checked={session.extraPiano} />
 				<label for="speed" title="How fast the music plays">Speed</label>
 				<div class="with-value">
 					<input
@@ -1115,6 +1125,10 @@
 	}
 	.mix-panel input {
 		accent-color: #ddd;
+	}
+	.mix-panel input[type='checkbox'] {
+		justify-self: start;
+		margin: 0;
 	}
 	.mix-panel select {
 		font: inherit;

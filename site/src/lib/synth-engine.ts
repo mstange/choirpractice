@@ -3,8 +3,11 @@ import { SoundBankLoader, SpessaSynthProcessor, type BasicSoundBank } from 'spes
 /** Seconds in which a channel's gain gets most of the way to a new value. */
 const GAIN_TIME = 0.05;
 
-/** A MIDI channel message other than a program change, at a time in the score in seconds. */
-export type ScoreEvent = { t: number; data: number[] };
+/**
+ * A MIDI channel message other than a program change, at a time in the score in seconds. `offset`
+ * is added to the message's channel, for the channels beyond the score's 16.
+ */
+export type ScoreEvent = { t: number; data: number[]; offset?: number };
 /** A note of the score, from its note-on to its note-off. */
 export type ScoreNote = { t0: number; t1: number; ch: number; key: number; vel: number };
 /** A sample of a sound bank, decoded: its index in the bank's samples, and its data. */
@@ -103,7 +106,7 @@ export class Engine {
 			}
 		} else if (m.type === 'program') {
 			// The program stays, whatever the score's events do.
-			const channel = synth.midiChannels[m.ch];
+			const channel = this.#channel(m.ch);
 			channel.setSystemParameter('presetLock', false);
 			synth.programChange(m.ch, m.program);
 			channel.setSystemParameter('presetLock', true);
@@ -112,7 +115,7 @@ export class Engine {
 			if (g) g.target = m.gain;
 			else {
 				this.#gains.set(m.ch, { target: m.gain, gain: m.gain });
-				synth.midiChannels[m.ch].setSystemParameter('gain', m.gain);
+				this.#channel(m.ch).setSystemParameter('gain', m.gain);
 			}
 		} else if (m.type === 'stop') {
 			// It cancels playing that hasn't started yet.
@@ -121,6 +124,12 @@ export class Engine {
 			this.#commands.push(m);
 			this.#commands.sort((a, b) => a.frame - b.frame);
 		}
+	}
+
+	/** The synthesizer's channel `ch`, which it creates, and those before it, if it hasn't yet. */
+	#channel(ch: number) {
+		while (this.synth.midiChannels.length <= ch) this.synth.createMIDIChannel();
+		return this.synth.midiChannels[ch];
 	}
 
 	/** Renders the frames from #frame on into `left` and `right`, which it adds to. */
@@ -176,8 +185,10 @@ export class Engine {
 	/** Dispatches the events up to `pos`. */
 	#dispatch(pos: number) {
 		const events = this.#events;
-		while (this.#next < events.length && events[this.#next].t <= pos)
-			this.synth.processMessage(events[this.#next++].data);
+		while (this.#next < events.length && events[this.#next].t <= pos) {
+			const { data, offset } = events[this.#next++];
+			this.synth.processMessage(data, offset);
+		}
 	}
 
 	/**
@@ -191,8 +202,8 @@ export class Engine {
 		synth.stopAll(false);
 		this.#next = 0;
 		for (; this.#next < events.length && events[this.#next].t < pos; this.#next++) {
-			const data = events[this.#next].data;
-			if ((data[0] & 0xe0) !== 0x80) synth.processMessage(data); // all but note-on and note-off
+			const { data, offset } = events[this.#next];
+			if ((data[0] & 0xe0) !== 0x80) synth.processMessage(data, offset); // all but note-on and note-off
 		}
 		const voices = (synth as unknown as { voices: Voice[] }).voices;
 		for (const note of this.#notes) {

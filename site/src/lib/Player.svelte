@@ -679,11 +679,12 @@
 					bind:value={session.emphasis}
 				/>
 				<label
-					for="extra-piano"
+					class="check"
 					title="A piano also plays the selected parts, to make their notes' starts clearer"
-					>Extra Piano</label
 				>
-				<input id="extra-piano" type="checkbox" bind:checked={session.extraPiano} />
+					<input type="checkbox" bind:checked={session.extraPiano} />
+					Extra Piano
+				</label>
 				<label for="speed" title="How fast the music plays">Speed</label>
 				<div class="with-value">
 					<input
@@ -1127,8 +1128,14 @@
 		accent-color: #ddd;
 	}
 	.mix-panel input[type='checkbox'] {
-		justify-self: start;
 		margin: 0;
+	}
+	.mix-panel .check {
+		grid-column: 2;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: -4px;
 	}
 	.mix-panel select {
 		font: inherit;

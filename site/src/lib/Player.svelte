@@ -101,6 +101,7 @@
 		) ?? null
 	);
 	let sheetCanvas: HTMLCanvasElement | undefined = $state();
+	let sheetFrozen = false;
 	let windowHeight = $state(0);
 	// Staves the same size in every piece, unless the sheet would take more than a third of the window.
 	const sheetHeight = $derived(
@@ -126,11 +127,12 @@
 		mixer.load(dirs, controller.signal).catch(() => {});
 		let raf = requestAnimationFrame(function frame() {
 			t = mixer.now();
-			if (mixer.playing && t >= mixer.duration) mixer.pause();
+			if (mixer.playing && !mixer.held && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
 			if (view !== 'lyrics' && barsCanvas)
 				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null);
-			if (sheet && sheetCanvas) drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]]);
+			if (sheet && sheetCanvas)
+				drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]], sheetFrozen);
 			drawTimeline(timelineCanvas, piece, colors, mixer, t);
 			raf = requestAnimationFrame(frame);
 		});
@@ -204,10 +206,64 @@
 
 	const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
-	function seekFromClick(e: MouseEvent, toTime: (fraction: number) => number) {
-		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		seek(toTime((e.clientX - rect.left) / rect.width));
+	/**
+	 * Lets a pointer move the playhead along an element. Playback holds while the pointer is down
+	 * and resumes on release if it was playing. `timeAt` gets the pointer's x position within the
+	 * element, and returns where to seek, or null for nowhere. `d.moved` says whether the pointer
+	 * has moved since it went down, which tells a click from a drag.
+	 */
+	type Drag = { x0: number; t0: number; moved: boolean; up: boolean };
+	function scrub(
+		timeAt: (x: number, width: number, d: Drag) => number | null,
+		onhold?: (held: boolean) => void
+	) {
+		return (el: HTMLElement) => {
+			const ondown = (down: PointerEvent) => {
+				if (!down.isPrimary || down.button !== 0) return;
+				el.setPointerCapture(down.pointerId);
+				const rect = el.getBoundingClientRect();
+				const xOf = (e: PointerEvent) => Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+				const d: Drag = { x0: xOf(down), t0: t, moved: false, up: false };
+				const update = (e: PointerEvent) => {
+					d.moved ||= Math.abs(xOf(e) - d.x0) > 4;
+					const time = timeAt(xOf(e), rect.width, d);
+					if (time !== null) seek(time);
+				};
+				const done = new AbortController();
+				const end = (e: PointerEvent) => {
+					d.up = e.type === 'pointerup';
+					if (d.up) update(e);
+					done.abort();
+					onhold?.(false);
+					mixer.release();
+				};
+				mixer.hold();
+				onhold?.(true);
+				update(down);
+				el.addEventListener('pointermove', update, { signal: done.signal });
+				el.addEventListener('pointerup', end, { signal: done.signal });
+				el.addEventListener('pointercancel', end, { signal: done.signal });
+			};
+			el.addEventListener('pointerdown', ondown);
+			return () => el.removeEventListener('pointerdown', ondown);
+		};
 	}
+
+	// Dragging pans the bars; a click without moving seeks to where it is.
+	const scrubBars = scrub((x, w, d) =>
+		d.moved
+			? d.t0 - ((x - d.x0) / w) * BAR_SECONDS
+			: d.up
+				? d.t0 + (x / w - NOW_X) * BAR_SECONDS
+				: null
+	);
+	// The page stands still while the cursor follows the pointer, rather than turning as soon as
+	// the cursor gets near its end.
+	const scrubSheet = scrub(
+		(x) => sheet && sheet.timeAt(x),
+		(held) => (sheetFrozen = held)
+	);
+	const scrubTimeline = scrub((x, w) => (x / w) * mixer.duration);
 
 	function onkeydown(e: KeyboardEvent) {
 		if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -295,9 +351,9 @@
 		{:else}
 			<canvas
 				class="bars"
-				title="Click to seek"
+				title="Drag to scroll, click to seek"
 				bind:this={barsCanvas}
-				onclick={(e) => seekFromClick(e, (f) => t + (f - NOW_X) * BAR_SECONDS)}
+				{@attach scrubBars}
 			></canvas>
 		{/if}
 	</main>
@@ -307,16 +363,16 @@
 			<canvas
 				class="sheet"
 				style:height="{sheetHeight}px"
-				title="Click to seek"
+				title="Click or drag to seek"
 				bind:this={sheetCanvas}
-				onclick={(e) => seek(sheet.timeAt(e.offsetX))}
+				{@attach scrubSheet}
 			></canvas>
 		{/if}
 		<canvas
 			class="timeline"
-			title="Click to seek"
+			title="Click or drag to seek"
 			bind:this={timelineCanvas}
-			onclick={(e) => seekFromClick(e, (f) => f * mixer.duration)}
+			{@attach scrubTimeline}
 		></canvas>
 
 		<div class="controls">
@@ -476,7 +532,8 @@
 
 		<div class="hint">
 			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
-			all parts · V: switch view · M: microphone · click a note or syllable to jump there
+			all parts · V: switch view · M: microphone · drag the notes to scroll, click a note or
+			syllable to jump there
 		</div>
 	</footer>
 </div>
@@ -543,7 +600,8 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
-		cursor: pointer;
+		cursor: grab;
+		touch-action: none;
 	}
 
 	footer {
@@ -554,12 +612,14 @@
 		width: 100%;
 		margin-bottom: 8px;
 		cursor: pointer;
+		touch-action: none;
 	}
 	.timeline {
 		display: block;
 		width: 100%;
 		height: 56px;
 		cursor: pointer;
+		touch-action: none;
 		border-radius: 6px;
 		background: rgb(255 255 255 / 0.04);
 	}

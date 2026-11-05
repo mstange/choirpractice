@@ -58,8 +58,18 @@ export class Sheet {
 		return Math.max(0, t[k] + ((u - x[k]) / (x[k + 1] - x[k])) * (t[k + 1] - t[k]));
 	}
 
-	/** Draws the page for time `s` into a strip of W x H CSS pixels, scaled to fit the height. */
-	draw(g: CanvasRenderingContext2D, s: number, W: number, H: number, color: string) {
+	/**
+	 * Draws the page for time `s` into a strip of W x H CSS pixels, scaled to fit the height. A
+	 * `frozen` page stays where it is, for dragging the cursor along it.
+	 */
+	draw(
+		g: CanvasRenderingContext2D,
+		s: number,
+		W: number,
+		H: number,
+		color: string,
+		frozen: boolean
+	) {
 		if (!this.#img) {
 			this.#img = new Image();
 			this.#img.src = this.#url;
@@ -73,7 +83,9 @@ export class Sheet {
 
 		const cursor = this.xAt(s) * scale;
 		const page = Math.max(0, Math.floor((cursor - LEAD * W) / (PAGE * W)));
-		const target = Math.max(0, Math.min(page * PAGE * W, this.info.width * scale - W));
+		const target = frozen
+			? this.#shown
+			: Math.max(0, Math.min(page * PAGE * W, this.info.width * scale - W));
 		const now = performance.now() / 1000;
 		// Slide to the next page; jump after seeking.
 		if (Math.abs(target - this.#shown) > W) this.#shown = target;

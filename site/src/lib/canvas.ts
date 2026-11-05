@@ -261,10 +261,16 @@ function drawMic(
 	g.restore();
 }
 
-export function drawSheet(c: HTMLCanvasElement, sheet: Sheet, t: number, color: string) {
+export function drawSheet(
+	c: HTMLCanvasElement,
+	sheet: Sheet,
+	t: number,
+	color: string,
+	frozen: boolean
+) {
 	const { g, W, H } = prepare(c);
 	g.globalAlpha = 0.85;
-	sheet.draw(g, t, W, H, color);
+	sheet.draw(g, t, W, H, color, frozen);
 	g.globalAlpha = 1;
 }
 

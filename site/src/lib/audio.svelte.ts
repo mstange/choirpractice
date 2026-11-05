@@ -16,8 +16,10 @@ const AHEAD = 3; // chunks after the playhead's chunk to keep decoded
 export class Mixer {
 	/** Whether the user wants playback, even while waiting for audio. */
 	playing = $state(false);
-	/** Playing, but the audio at the playhead hasn't arrived yet. */
+	/** Playing, but held, or the audio at the playhead hasn't arrived yet. */
 	waiting = $state(false);
+	/** Whether the user holds the playhead, for example while dragging it. Playing resumes on release. */
+	#held = false;
 	error = $state('');
 	readonly duration: number;
 	/** Per chunk, whether it has been fetched for all parts. Not reactive; read it while drawing. */
@@ -176,7 +178,7 @@ export class Mixer {
 	/** Starts a run of source nodes at #offset, or waits until its chunk has arrived. */
 	#start() {
 		const k = this.#chunkAt(this.#offset);
-		this.waiting = !this.#decoded(k);
+		this.waiting = this.#held || !this.#decoded(k);
 		this.#decode(k);
 		if (this.waiting) return;
 		const rate = this.#info.rate;
@@ -217,6 +219,24 @@ export class Mixer {
 		this.#run++;
 		for (const s of this.#sources) s.stop();
 		this.#sources = [];
+	}
+
+	get held() {
+		return this.#held;
+	}
+
+	/** Stops the sound until release(), but stays playing. */
+	hold() {
+		this.#held = true;
+		if (!this.playing) return;
+		this.#offset = this.now();
+		this.#stop();
+		this.waiting = true;
+	}
+
+	release() {
+		this.#held = false;
+		if (this.playing && this.waiting) this.#start();
 	}
 
 	pause() {

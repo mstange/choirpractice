@@ -12,6 +12,8 @@ export class Session {
 	// The default worked on a MacBook with its built-in mic.
 	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0.12));
 	#barSeconds = $state(Number(globalThis.localStorage?.getItem('barSeconds') ?? 10));
+	// Choir Aahs.
+	#vocalProgram = $state(Number(globalThis.localStorage?.getItem('vocalProgram') ?? 52));
 
 	/**
 	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows
@@ -24,6 +26,15 @@ export class Session {
 	set micDelay(value: number) {
 		this.#micDelay = value;
 		localStorage.setItem('micDelay', String(value));
+	}
+
+	/** The General MIDI program that plays the vocal parts. Kept across visits. */
+	get vocalProgram() {
+		return this.#vocalProgram;
+	}
+	set vocalProgram(value: number) {
+		this.#vocalProgram = value;
+		localStorage.setItem('vocalProgram', String(value));
 	}
 
 	/** Seconds of music across the Pitch view. Kept across visits. */
@@ -57,17 +68,13 @@ export class Session {
 	}
 }
 
-/**
- * What is kept per piece across visits: also the accompaniment levels, the speed, and the
- * instruments picked instead of the score's, by part name.
- */
+/** What is kept per piece across visits: also the accompaniment levels and the speed. */
 export type Saved = {
 	selected: string[];
 	emphasis: number;
 	extraPiano: boolean;
 	levels: Record<string, number>;
 	speed: number;
-	instruments: Record<string, number>;
 };
 
 const norm = (name: string) =>

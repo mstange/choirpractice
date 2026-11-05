@@ -45,7 +45,7 @@
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
-	const PIANO_GAIN = 0.5; // the gain of the piano that doubles a selected part
+	const PIANO_GAIN = 1; // the gain of the piano that doubles a selected part
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -54,9 +54,13 @@
 	const colors = assignColors(voices);
 	const accompaniment = parts.filter((p) => !p.vocal).map((p) => p.name);
 	// A part with several channels, such as a cello's arco and pizzicato, keeps its instruments.
-	const playable = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.name);
-	const synth = new Synth(parts, measures[measures.length - 1], (file) =>
-		mediaUrl('soundfont', file)
+	const playable = parts.some((p) => p.vocal && p.channels.length === 1);
+	const synth = new Synth(
+		parts,
+		measures[measures.length - 1],
+		(file) => mediaUrl('soundfont', file),
+		// svelte-ignore state_referenced_locally
+		session.vocalProgram
 	);
 
 	// Background hue changes at the first syllable starting with each configured word.
@@ -79,8 +83,6 @@
 		)
 	);
 	let speed = $state(saved.speed ?? 1);
-	/** The instruments that the user picked instead of the score's, by part name. */
-	let instruments: Record<string, number> = $state(saved.instruments ?? {});
 	// Save once the user changes something, so that a piece they haven't touched keeps taking the
 	// selection over from the previous piece.
 	let changed = false;
@@ -90,8 +92,7 @@
 			emphasis: session.emphasis,
 			extraPiano: session.extraPiano,
 			levels: accompLevels,
-			speed,
-			instruments
+			speed
 		};
 		const json = JSON.stringify(saved);
 		if (changed) localStorage.setItem(storageKey, json);
@@ -126,6 +127,9 @@
 	);
 	$effect(() => synth.setLoop(loopTimes));
 	$effect(() => synth.setSpeed(speed));
+	$effect(() => {
+		synth.setVocalProgram(session.vocalProgram);
+	});
 	const selectedSet = $derived(new Set(session.selected));
 	const measure = $derived(measureAt(t));
 	const hue = $derived(
@@ -143,7 +147,7 @@
 	});
 
 	onMount(() => {
-		synth.load(fileUrl('score.mid'), $state.snapshot(instruments));
+		synth.load(fileUrl('score.mid'));
 		let raf = requestAnimationFrame(function frame() {
 			t = synth.now();
 			if (synth.playing && !synth.held && t >= synth.duration) synth.pause();
@@ -711,28 +715,16 @@
 					/>
 					<output for="mic-delay">{Math.round(session.micDelay * 1000)} ms</output>
 				</div>
-				{#each playable as name, i (name)}
-					{@const own = synth.scorePrograms[name]}
-					<label for="instrument-{i}" title="The instrument that plays {name}">{name}</label>
-					<select
-						id="instrument-{i}"
-						disabled={synth.programs[name] === undefined}
-						value={synth.programs[name]}
-						onchange={(e) => {
-							const program = Number(e.currentTarget.value);
-							if (program === own) delete instruments[name];
-							else instruments[name] = program;
-							synth.setInstrument(name, program);
-						}}
+				{#if playable}
+					<label for="vocal-instrument" title="The instrument that plays the vocal parts"
+						>Vocal Instrument</label
 					>
-						{#if own !== undefined && !INSTRUMENTS.some(([p]) => p === own)}
-							<option value={own}>{synth.names[own] ?? `Program ${own + 1}`}</option>
-						{/if}
+					<select id="vocal-instrument" bind:value={session.vocalProgram}>
 						{#each INSTRUMENTS as [program, label] (program)}
 							<option value={program}>{label}</option>
 						{/each}
 					</select>
-				{/each}
+				{/if}
 				{#each accompaniment as name (name)}
 					<label for="accomp-{name}">{name}</label>
 					<input

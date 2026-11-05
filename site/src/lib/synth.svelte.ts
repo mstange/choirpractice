@@ -26,12 +26,6 @@ export class Synth {
 	/** Playing, but held, or the instruments haven't loaded yet. */
 	waiting = $state(false);
 	error = $state('');
-	/** The program each part plays, by part name, once the score has loaded. */
-	programs: Record<string, number> = $state({});
-	/** The program of each part in the score. */
-	scorePrograms: Record<string, number> = $state({});
-	/** The soundfont's names of the programs loaded so far. */
-	names: Record<number, string> = $state({});
 	readonly duration: number;
 
 	#ctx = new AudioContext({ latencyHint: 'playback' });
@@ -47,6 +41,14 @@ export class Synth {
 	#notes = new Map<number, [number, number][]>();
 	/** Per vocal part, the channel of its piano. */
 	#pianos = new Map<string, number>();
+	/**
+	 * The channels of the vocal parts, which play #vocalProgram instead of the score's program. A
+	 * part with several channels, such as a cello's arco and pizzicato, keeps its programs.
+	 */
+	#vocal: number[];
+	#vocalProgram: number;
+	/** Whether the score has been read, so that the notes of each channel are known. */
+	#scored = false;
 	/** Per channel, a count of program changes, so that only the latest one takes effect. */
 	#changes = new Map<number, number>();
 	#ready = false;
@@ -58,8 +60,15 @@ export class Synth {
 	/** While sounding: playback is at `pos` at context time `time`, with this loop. */
 	#anchor: { time: number; pos: number; loop: [number, number] | null } | null = null;
 
-	constructor(parts: Part[], duration: number, soundfontUrl: (file: string) => string) {
+	constructor(
+		parts: Part[],
+		duration: number,
+		soundfontUrl: (file: string) => string,
+		vocalProgram: number
+	) {
 		this.#parts = parts;
+		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
+		this.#vocalProgram = vocalProgram;
 		this.duration = duration;
 		this.#soundfontUrl = soundfontUrl;
 		// Channel 9 of every 16 plays drum kits.
@@ -77,11 +86,8 @@ export class Synth {
 		};
 	}
 
-	/**
-	 * Loads the score and its instruments; `instruments` replaces the score's program of some parts,
-	 * by part name.
-	 */
-	async load(midiUrl: string, instruments: Record<string, number>) {
+	/** Loads the score and its instruments. */
+	async load(midiUrl: string) {
 		try {
 			await this.#ctx.audioWorklet.addModule(workletUrl);
 			this.#node = new AudioWorkletNode(this.#ctx, 'synth', {
@@ -117,16 +123,16 @@ export class Synth {
 				if (!list.some(([k, v]) => k === n.key && v === n.vel)) list.push([n.key, n.vel]);
 				this.#notes.set(n.ch, list);
 			}
+			this.#scored = true;
 			const loads = [];
-			for (const { name, channels } of this.#parts) {
-				if (!channels.length) continue;
-				this.scorePrograms[name] = programs.get(channels[0]) ?? 0;
-				// A part with several channels, such as a cello's arco and pizzicato, keeps them all.
-				const replaced = channels.length === 1 ? instruments[name] : undefined;
-				this.programs[name] = replaced ?? this.scorePrograms[name];
+			for (const { channels } of this.#parts)
 				for (const ch of channels)
-					loads.push(this.#setProgram(ch, replaced ?? programs.get(ch) ?? 0));
-			}
+					loads.push(
+						this.#setProgram(
+							ch,
+							this.#vocal.includes(ch) ? this.#vocalProgram : (programs.get(ch) ?? 0)
+						)
+					);
 			for (const ch of this.#pianos.values()) loads.push(this.#setProgram(ch, PIANO));
 			await Promise.all(loads);
 			this.#ready = true;
@@ -148,12 +154,14 @@ export class Synth {
 		else this.#queue.push([m, transfer]);
 	}
 
-	/** Plays a vocal part with another General MIDI program. */
-	async setInstrument(part: string, program: number) {
-		const { channels } = this.#parts.find((p) => p.name === part)!;
-		this.programs[part] = program;
+	/** Plays the vocal parts with another General MIDI program. */
+	async setVocalProgram(program: number) {
+		if (program === this.#vocalProgram) return;
+		this.#vocalProgram = program;
+		// Until then, load() picks it up.
+		if (!this.#scored) return;
 		try {
-			await this.#setProgram(channels[0], program);
+			await Promise.all(this.#vocal.map((ch) => this.#setProgram(ch, program)));
 		} catch (e) {
 			if (!this.error) this.error = String((e as Error).message ?? e);
 		}
@@ -163,12 +171,11 @@ export class Synth {
 		const change = (this.#changes.get(ch) ?? 0) + 1;
 		this.#changes.set(ch, change);
 		const id = this.#soundfontUrl(soundfontFile(program));
-		const { buffer, name, samples } = await this.#request<SamplesReply>({
+		const { buffer, samples } = await this.#request<SamplesReply>({
 			type: 'samples',
 			url: id,
 			notes: this.#notes.get(ch) ?? []
 		});
-		this.names[program] = name;
 		const transfer = [...samples.map((s) => s.data.buffer), ...(buffer ? [buffer] : [])];
 		this.#post({ type: 'bank', id, buffer, samples }, transfer);
 		if (this.#changes.get(ch) === change) this.#post({ type: 'program', ch, program });

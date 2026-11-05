@@ -15,7 +15,7 @@ export type MidiReply = {
 	programs: Map<number, number>;
 };
 /** The bank, the first time it is asked for, and its samples that weren't decoded before. */
-export type SamplesReply = { buffer?: ArrayBuffer; name: string; samples: DecodedSample[] };
+export type SamplesReply = { buffer?: ArrayBuffer; samples: DecodedSample[] };
 
 /** Per URL, the bank, whether the audio thread got it, and which of its samples were decoded. */
 const banks = new Map<
@@ -93,7 +93,7 @@ async function decode(url: string, notes: [number, number][]): Promise<SamplesRe
 			samples.push({ index, data: sample.getAudioData() });
 			sample.releaseDecoded();
 		}
-	return { buffer, name: preset.name, samples };
+	return { buffer, samples };
 }
 
 onmessage = async ({ data: req }: MessageEvent<Request & { id: number }>) => {

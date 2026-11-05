@@ -9,6 +9,7 @@ export class Session {
 	#voices: string[] = [];
 	// The default worked on a MacBook with its built-in mic.
 	#micDelay = $state(Number(globalThis.localStorage?.getItem('micDelay') ?? 0.12));
+	#barSeconds = $state(Number(globalThis.localStorage?.getItem('barSeconds') ?? 10));
 
 	/**
 	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows
@@ -21,6 +22,15 @@ export class Session {
 	set micDelay(value: number) {
 		this.#micDelay = value;
 		localStorage.setItem('micDelay', String(value));
+	}
+
+	/** Seconds of music across the Pitch view. Kept across visits. */
+	get barSeconds() {
+		return this.#barSeconds;
+	}
+	set barSeconds(value: number) {
+		this.#barSeconds = value;
+		localStorage.setItem('barSeconds', String(value));
 	}
 
 	/**

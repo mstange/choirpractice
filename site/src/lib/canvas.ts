@@ -1,7 +1,6 @@
 import type { Sheet } from './sheet.ts';
 import type { Note, PieceData, Voice } from './types.ts';
 
-export const BAR_SECONDS = 10; // seconds of music visible across the bar view
 export const NOW_X = 0.2; // position of the "now" line as a fraction of the bar view width
 const LOOP_RGB = '255 204 0';
 
@@ -57,10 +56,13 @@ interface VoiceLayout {
 	z: number;
 }
 
-/** Horizontal layout of the bar view and its ruler, with time `t` on the "now" line. */
-function timeAxis(W: number, t: number) {
+/**
+ * Horizontal layout of the bar view and its ruler, with time `t` on the "now" line and `seconds`
+ * of music across the width.
+ */
+function timeAxis(W: number, t: number, seconds: number) {
 	const nowX = W * NOW_X,
-		pps = W / BAR_SECONDS;
+		pps = W / seconds;
 	return {
 		nowX,
 		X: (s: number) => nowX + (s - t) * pps,
@@ -119,13 +121,14 @@ export function drawBars(
 	data: PieceData,
 	colors: Record<string, string>,
 	t: number,
+	seconds: number,
 	selected: Set<string>,
 	mic: MicTrace | null,
 	loop: Loop | null
 ) {
 	lyricFont ??= getComputedStyle(document.documentElement).getPropertyValue('--lyric-font');
 	const { g, W, H } = prepare(c);
-	const { nowX, X, tMin, tMax } = timeAxis(W, t);
+	const { nowX, X, tMin, tMax } = timeAxis(W, t, seconds);
 	const axis = pitchAxis(data.voices, H),
 		y = axis.y;
 	const layout = barLayout(data.voices, selected, axis.step);
@@ -248,9 +251,15 @@ export function drawBars(
 }
 
 /** The ruler above the bar view: measure numbers and the loop. */
-export function drawRuler(c: HTMLCanvasElement, measures: number[], t: number, loop: Loop | null) {
+export function drawRuler(
+	c: HTMLCanvasElement,
+	measures: number[],
+	t: number,
+	seconds: number,
+	loop: Loop | null
+) {
 	const { g, W, H } = prepare(c);
-	const { nowX, X } = timeAxis(W, t);
+	const { nowX, X } = timeAxis(W, t, seconds);
 	g.fillStyle = 'rgb(255 255 255 / 0.05)';
 	g.fillRect(0, 0, W, H);
 	if (loop) {

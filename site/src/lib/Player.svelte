@@ -4,7 +4,6 @@
 	import { resolve } from '$app/paths';
 	import { Mixer } from './audio.svelte.ts';
 	import {
-		BAR_SECONDS,
 		NOW_X,
 		drawBars,
 		drawRuler,
@@ -43,6 +42,7 @@
 	const fileUrl = (file: string) => mediaUrl(season, `${entry.slug}/${file}`);
 
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
+	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -138,8 +138,17 @@
 			if (mixer.playing && !mixer.held && t >= mixer.duration) mixer.pause();
 			if (mic.active) recordMic();
 			if (view !== 'lyrics' && barsCanvas && rulerCanvas) {
-				drawBars(barsCanvas, piece, colors, t, selectedSet, mic.active ? micTrace : null, loop);
-				drawRuler(rulerCanvas, measures, t, loop);
+				drawBars(
+					barsCanvas,
+					piece,
+					colors,
+					t,
+					session.barSeconds,
+					selectedSet,
+					mic.active ? micTrace : null,
+					loop
+				);
+				drawRuler(rulerCanvas, measures, t, session.barSeconds, loop);
 			}
 			if (sheet && sheetCanvas)
 				drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]], sheetFrozen);
@@ -262,11 +271,13 @@
 
 	// Dragging pans the bars; a click without moving seeks to where it is.
 	const scrubBars = scrub((x, w, d) =>
-		d.moved
-			? d.t0 - ((x - d.x0) / w) * BAR_SECONDS
-			: d.up
-				? d.t0 + (x / w - NOW_X) * BAR_SECONDS
-				: null
+		pinching
+			? null
+			: d.moved
+				? d.t0 - ((x - d.x0) / w) * session.barSeconds
+				: d.up
+					? d.t0 + (x / w - NOW_X) * session.barSeconds
+					: null
 	);
 	// The page stands still while the cursor follows the pointer, rather than turning as soon as
 	// the cursor gets near its end.
@@ -284,8 +295,8 @@
 	function loopRuler(el: HTMLElement) {
 		const last = measures.length - 1;
 		const xOf = (e: PointerEvent) => e.clientX - el.getBoundingClientRect().left;
-		const timeAt = (x: number) => t + (x / el.clientWidth - NOW_X) * BAR_SECONDS;
-		const xAt = (time: number) => (NOW_X + (time - t) / BAR_SECONDS) * el.clientWidth;
+		const timeAt = (x: number) => t + (x / el.clientWidth - NOW_X) * session.barSeconds;
+		const xAt = (time: number) => (NOW_X + (time - t) / session.barSeconds) * el.clientWidth;
 		// The start of the measure nearest to a time.
 		const nearest = (time: number) => {
 			const m = measureAt(time);
@@ -315,7 +326,7 @@
 			let moved = false;
 			const update = (e: PointerEvent) => {
 				moved ||= Math.abs(xOf(e) - x0) > 4;
-				if (!moved) return;
+				if (!moved || pinching) return;
 				const time = timeAt(xOf(e));
 				if (mode === 'new' || !start) {
 					const [a, b] = [measureAt(t0), measureAt(time)];
@@ -332,7 +343,7 @@
 			const done = new AbortController();
 			const end = (e: PointerEvent) => {
 				done.abort();
-				if (moved || e.type !== 'pointerup') return;
+				if (moved || pinching || e.type !== 'pointerup') return;
 				if (mode === 'new' || !start) seek(measures[measureAt(timeAt(xOf(e)))]);
 				else loop = { ...start, on: !start.on };
 			};
@@ -345,6 +356,69 @@
 		return () => {
 			el.removeEventListener('pointermove', onhover);
 			el.removeEventListener('pointerdown', ondown);
+		};
+	}
+
+	/** Shows `seconds` of music across the Pitch view, keeping the "now" line where it is. */
+	function setBarSeconds(seconds: number) {
+		session.barSeconds = Math.min(Math.max(seconds, BAR_SECONDS[0]), BAR_SECONDS[1]);
+	}
+
+	/**
+	 * Zooms the Pitch view with ctrl+wheel and with two-finger pinches. A trackpad pinch arrives as
+	 * ctrl+wheel with many small pixel deltas: the OS's magnification scaled by about 100, so
+	 * exp(-deltaY / 100) matches the browser's own pinch-zoom. A mouse wheel notch is a single
+	 * delta of about 100 px, and coalesced events have larger deltas, so a single event zooms by at
+	 * most 1.25. Touch pinches hold the drags, which check `pinching`, until all fingers are up.
+	 */
+	let pinching = false;
+	function zoomable(el: HTMLElement) {
+		const onwheel = (e: WheelEvent) => {
+			if (!e.ctrlKey || view === 'lyrics') return;
+			e.preventDefault();
+			const factor = e.deltaMode
+				? 2 ** (-e.deltaY * (e.deltaMode === 1 ? 0.05 : 1))
+				: Math.min(Math.max(Math.exp(-e.deltaY / 100), 1 / 1.25), 1.25);
+			setBarSeconds(session.barSeconds / factor);
+		};
+		const touches = new Map<number, [number, number]>();
+		let spread0 = 0,
+			seconds0 = 0;
+		const spread = () => {
+			const [[x0, y0], [x1, y1]] = touches.values();
+			return Math.hypot(x1 - x0, y1 - y0);
+		};
+		// Two fingers zoom from the spread and scale they had when the second one came down.
+		const restart = () => {
+			spread0 = touches.size === 2 ? spread() : 0;
+			seconds0 = session.barSeconds;
+			pinching ||= touches.size > 1;
+			if (!touches.size) pinching = false;
+		};
+		const ondown = (e: PointerEvent) => {
+			if (e.pointerType !== 'touch' || view === 'lyrics') return;
+			touches.set(e.pointerId, [e.clientX, e.clientY]);
+			restart();
+		};
+		const onmove = (e: PointerEvent) => {
+			if (!touches.has(e.pointerId)) return;
+			touches.set(e.pointerId, [e.clientX, e.clientY]);
+			if (spread0) setBarSeconds((seconds0 * spread0) / Math.max(spread(), 1));
+		};
+		const onup = (e: PointerEvent) => {
+			if (touches.delete(e.pointerId)) restart();
+		};
+		const listeners = [
+			['wheel', onwheel],
+			['pointerdown', ondown],
+			['pointermove', onmove],
+			['pointerup', onup],
+			['pointercancel', onup]
+		] as const;
+		for (const [type, f] of listeners)
+			el.addEventListener(type, f as EventListener, { passive: false });
+		return () => {
+			for (const [type, f] of listeners) el.removeEventListener(type, f as EventListener);
 		};
 	}
 
@@ -430,7 +504,7 @@
 		</div>
 	</header>
 
-	<main class="stage">
+	<main class="stage" {@attach zoomable}>
 		{#if view === 'lyrics'}
 			<Lyrics {voices} {colors} selected={selectedSet} {t} onseek={seek} />
 		{:else}
@@ -623,8 +697,9 @@
 
 		<div class="hint">
 			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
-			all parts · V: switch view · M: microphone · L: loop on/off · drag the notes to scroll, click
-			a note or syllable to jump there · drag along the measure numbers to set a loop
+			all parts · V: switch view · M: microphone · L: loop on/off · Ctrl+wheel: zoom · drag the
+			notes to scroll, click a note or syllable to jump there · drag along the measure numbers to
+			set a loop
 		</div>
 	</footer>
 </div>

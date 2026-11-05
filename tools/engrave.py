@@ -58,7 +58,8 @@ layout = re.sub(r"\s*<(VBox|TBox)>.*?</\1>", "", mscx, flags=re.S)
 layout = re.sub(r"\s*<LayoutBreak>.*?</LayoutBreak>", "", layout, flags=re.S)
 
 vocal = [i for i, p in enumerate(piece["parts"]) if p["vocal"]]
-variants = [(pathlib.Path(piece["parts"][i]["file"]).name, [i]) for i in vocal]
+slug = lambda name: re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+variants = [(slug(piece["parts"][i]["name"]), [i]) for i in vocal]
 # On a strip of reasonable height, the staves of a bigger choir would be too small to read.
 MAX_CHOIR = 4
 if 1 < len(vocal) <= MAX_CHOIR:

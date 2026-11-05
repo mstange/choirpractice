@@ -331,19 +331,18 @@ export function drawSheet(
 	g.globalAlpha = 1;
 }
 
-// The overview is static apart from the playhead and loading progress, so it is drawn once per size.
+// The overview is static apart from the playhead and the loop, so it is drawn once per size.
 const timelineCache = new WeakMap<HTMLCanvasElement, { key: string; base: OffscreenCanvas }>();
 
 export function drawTimeline(
 	c: HTMLCanvasElement,
 	data: PieceData,
 	colors: Record<string, string>,
-	audio: { duration: number; chunkSeconds: number; loaded: boolean[] },
 	t: number,
 	loop: [number, number] | null
 ) {
 	const { g, W, H } = prepare(c);
-	const { duration } = audio;
+	const duration = data.measures[data.measures.length - 1];
 	const dpr = devicePixelRatio;
 	const key = `${W}x${H}@${dpr}`;
 	let cached = timelineCache.get(c);
@@ -366,12 +365,6 @@ export function drawTimeline(
 		timelineCache.set(c, cached);
 	}
 	g.drawImage(cached.base, 0, 0, W, H);
-	// Dim the parts whose audio hasn't arrived yet.
-	g.fillStyle = 'rgb(0 0 0 / 0.55)';
-	audio.loaded.forEach((done, k) => {
-		const x0 = ((k * audio.chunkSeconds) / duration) * W;
-		if (!done) g.fillRect(x0, 0, (audio.chunkSeconds / duration) * W + 1, H);
-	});
 	if (loop) {
 		const [x0, x1] = loop.map((s) => (s / duration) * W);
 		g.fillStyle = `rgb(${LOOP_RGB} / 0.12)`;

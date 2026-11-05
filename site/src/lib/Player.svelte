@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Mixer } from './audio.svelte.ts';
 	import {
 		NOW_X,
 		drawBars,
@@ -13,10 +12,12 @@
 		type MicTrace
 	} from './canvas.ts';
 	import { assignColors } from './colors.ts';
+	import { INSTRUMENTS } from './instruments.ts';
 	import Lyrics from './Lyrics.svelte';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
 	import type { Saved, Session } from './session.svelte.ts';
+	import { Synth } from './synth.svelte.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
 	// The route re-creates this component for each piece, so props other than the view never change
@@ -37,12 +38,13 @@
 		session: Session;
 	} = $props();
 	// svelte-ignore state_referenced_locally
-	const { voices, parts, measures, audio, engravings } = piece;
+	const { voices, parts, measures, engravings } = piece;
 	// svelte-ignore state_referenced_locally
 	const fileUrl = (file: string) => mediaUrl(season, `${entry.slug}/${file}`);
 
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
+	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -50,9 +52,10 @@
 	const voiceNames = voices.map((v) => v.name);
 	const colors = assignColors(voices);
 	const accompaniment = parts.filter((p) => !p.vocal).map((p) => p.name);
-	const mixer = new Mixer(
-		parts.map((p) => p.name),
-		audio
+	// A part with several channels, such as a cello's arco and pizzicato, keeps its instruments.
+	const playable = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.name);
+	const synth = new Synth(parts, measures[measures.length - 1], (file) =>
+		mediaUrl('soundfont', file)
 	);
 
 	// Background hue changes at the first syllable starting with each configured word.
@@ -67,13 +70,16 @@
 	// svelte-ignore state_referenced_locally
 	const storageKey = `piece:${season}/${entry.slug}`;
 	// svelte-ignore state_referenced_locally
-	const savedLevels = session.enter(storageKey, voiceNames);
+	const saved = session.enter(storageKey, voiceNames);
 	let accompLevels = $state(
 		Object.fromEntries(
 			// svelte-ignore state_referenced_locally
-			accompaniment.map((n) => [n, savedLevels[n] ?? entry.levels?.[n] ?? 0.6])
+			accompaniment.map((n) => [n, saved.levels?.[n] ?? entry.levels?.[n] ?? 0.6])
 		)
 	);
+	let speed = $state(saved.speed ?? 1);
+	/** The instruments that the user picked instead of the score's, by part name. */
+	let instruments: Record<string, number> = $state(saved.instruments ?? {});
 	// Save once the user changes something, so that a piece they haven't touched keeps taking the
 	// selection over from the previous piece.
 	let changed = false;
@@ -81,7 +87,9 @@
 		const saved: Saved = {
 			selected: session.selected,
 			emphasis: session.emphasis,
-			levels: accompLevels
+			levels: accompLevels,
+			speed,
+			instruments
 		};
 		const json = JSON.stringify(saved);
 		if (changed) localStorage.setItem(storageKey, json);
@@ -114,7 +122,8 @@
 	const loopTimes = $derived<[number, number] | null>(
 		loop?.on ? [measures[loop.from], measures[loop.to]] : null
 	);
-	$effect(() => mixer.setLoop(loopTimes));
+	$effect(() => synth.setLoop(loopTimes));
+	$effect(() => synth.setSpeed(speed));
 	const selectedSet = $derived(new Set(session.selected));
 	const measure = $derived(measureAt(t));
 	const hue = $derived(
@@ -125,17 +134,15 @@
 		for (const { name, vocal } of parts) {
 			const unselected = 1 - 0.9 * session.emphasis;
 			const gain = !vocal ? accompLevels[name] : session.selected.includes(name) ? 1 : unselected;
-			mixer.setGain(name, gain);
+			synth.setGain(name, gain);
 		}
 	});
 
 	onMount(() => {
-		const controller = new AbortController();
-		const dirs = Object.fromEntries(parts.map((p) => [p.name, fileUrl(p.file)]));
-		mixer.load(dirs, controller.signal).catch(() => {});
+		synth.load(fileUrl('score.mid'), $state.snapshot(instruments));
 		let raf = requestAnimationFrame(function frame() {
-			t = mixer.now();
-			if (mixer.playing && !mixer.held && t >= mixer.duration) mixer.pause();
+			t = synth.now();
+			if (synth.playing && !synth.held && t >= synth.duration) synth.pause();
 			if (mic.active) recordMic();
 			if (view !== 'lyrics' && barsCanvas && rulerCanvas) {
 				drawBars(
@@ -152,22 +159,22 @@
 			}
 			if (sheet && sheetCanvas)
 				drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]], sheetFrozen);
-			drawTimeline(timelineCanvas, piece, colors, mixer, t, loopTimes);
+			drawTimeline(timelineCanvas, piece, colors, t, loopTimes);
 			raf = requestAnimationFrame(frame);
 		});
 		return () => {
 			cancelAnimationFrame(raf);
-			controller.abort();
-			mixer.close();
+			synth.close();
 		};
 	});
 
 	/** Adds the mic's current pitch to the trail, which follows the playhead. */
 	function recordMic() {
+		// The delays are in seconds, and the trail in seconds of the score.
 		micTrace.now = mic.read();
-		micTrace.shift = session.micDelay;
-		if (!mixer.playing || mixer.waiting) return;
-		const at = t - mic.delay,
+		micTrace.shift = session.micDelay * synth.speed;
+		if (!synth.playing || synth.waiting) return;
+		const at = t - mic.delay * synth.speed,
 			{ trail } = micTrace;
 		// After seeking back, the new attempt replaces the old one.
 		while (trail.length && trail[trail.length - 1].t >= at) trail.pop();
@@ -181,14 +188,14 @@
 	}
 
 	function seek(time: number) {
-		mixer.seek(time);
-		t = mixer.now();
+		synth.seek(time);
+		t = synth.now();
 	}
 
 	function togglePlay() {
-		if (mixer.playing) return mixer.pause();
+		if (synth.playing) return synth.pause();
 		if (loopTimes && (t < loopTimes[0] || t >= loopTimes[1])) seek(loopTimes[0]);
-		mixer.play();
+		synth.play();
 	}
 
 	// The view is part of the URL. Switching it replaces the history entry, so that Back goes to the
@@ -255,9 +262,9 @@
 					if (d.up) update(e);
 					done.abort();
 					onhold?.(false);
-					mixer.release();
+					synth.release();
 				};
-				mixer.hold();
+				synth.hold();
 				onhold?.(true);
 				update(down);
 				el.addEventListener('pointermove', update, { signal: done.signal });
@@ -285,7 +292,7 @@
 		(x) => sheet && sheet.timeAt(x),
 		(held) => (sheetFrozen = held)
 	);
-	const scrubTimeline = scrub((x, w) => (x / w) * mixer.duration);
+	const scrubTimeline = scrub((x, w) => (x / w) * synth.duration);
 
 	/**
 	 * The ruler above the bars holds the loop. Dragging along it makes a loop over the measures it
@@ -544,12 +551,12 @@
 			<div class="transport">
 				<button
 					class="play"
-					class:waiting={mixer.waiting}
-					aria-label={mixer.playing ? 'Pause' : 'Play'}
+					class:waiting={synth.waiting}
+					aria-label={synth.playing ? 'Pause' : 'Play'}
 					onclick={togglePlay}
 				>
 					<svg viewBox="0 0 16 16" aria-hidden="true">
-						{#if mixer.playing}
+						{#if synth.playing}
 							<path d="M4 2.5h2.6v11H4zM9.4 2.5H12v11H9.4z" />
 						{:else}
 							<path d="M4.5 2.2 13.5 8l-9 5.8z" />
@@ -557,10 +564,10 @@
 					</svg>
 				</button>
 				<div class="time">
-					{#if mixer.error}
-						<span class="error" title={mixer.error}>Audio failed</span>
+					{#if synth.error}
+						<span class="error" title={synth.error}>Audio failed</span>
 					{:else}
-						<span>{fmt(t)} / {fmt(mixer.duration)}</span>
+						<span>{fmt(t)} / {fmt(synth.duration)}</span>
 					{/if}
 					<span class="measure">m. {measure + 1}</span>
 				</div>
@@ -667,10 +674,22 @@
 					step="0.01"
 					bind:value={session.emphasis}
 				/>
+				<label for="speed" title="How fast the music plays">Speed</label>
+				<div class="with-value">
+					<input
+						id="speed"
+						type="range"
+						min={SPEEDS[0]}
+						max={SPEEDS[1]}
+						step="0.05"
+						bind:value={speed}
+					/>
+					<output for="speed">{Math.round(speed * 100)}%</output>
+				</div>
 				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
 					>Mic delay</label
 				>
-				<div class="mic-delay">
+				<div class="with-value">
 					<input
 						id="mic-delay"
 						type="range"
@@ -681,6 +700,28 @@
 					/>
 					<output for="mic-delay">{Math.round(session.micDelay * 1000)} ms</output>
 				</div>
+				{#each playable as name, i (name)}
+					{@const own = synth.scorePrograms[name]}
+					<label for="instrument-{i}" title="The instrument that plays {name}">{name}</label>
+					<select
+						id="instrument-{i}"
+						disabled={synth.programs[name] === undefined}
+						value={synth.programs[name]}
+						onchange={(e) => {
+							const program = Number(e.currentTarget.value);
+							if (program === own) delete instruments[name];
+							else instruments[name] = program;
+							synth.setInstrument(name, program);
+						}}
+					>
+						{#if own !== undefined && !INSTRUMENTS.some(([p]) => p === own)}
+							<option value={own}>{synth.names[own] ?? `Program ${own + 1}`}</option>
+						{/if}
+						{#each INSTRUMENTS as [program, label] (program)}
+							<option value={program}>{label}</option>
+						{/each}
+					</select>
+				{/each}
 				{#each accompaniment as name (name)}
 					<label for="accomp-{name}">{name}</label>
 					<input
@@ -1063,6 +1104,8 @@
 		gap: 10px 14px;
 		grid-template-columns: auto 160px;
 		align-items: center;
+		max-height: 70dvh;
+		overflow-y: auto;
 	}
 	.mix-panel:popover-open {
 		display: grid;
@@ -1073,16 +1116,27 @@
 	.mix-panel input {
 		accent-color: #ddd;
 	}
-	.mic-delay {
+	.mix-panel select {
+		font: inherit;
+		color: inherit;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		padding: 2px 6px;
+	}
+	.mix-panel option {
+		background: #222;
+	}
+	.with-value {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 	}
-	.mic-delay input {
+	.with-value input {
 		flex: 1;
 		min-width: 0;
 	}
-	.mic-delay output {
+	.with-value output {
 		font-size: 12px;
 		font-variant-numeric: tabular-nums;
 		min-width: 4em;

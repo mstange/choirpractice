@@ -4,8 +4,9 @@ Usage: extract.py score.musicxml score.mid src_dir out.json
 
 Both input files must be exported by MuseScore from the same score; src_dir holds the
 unpacked .mscz, whose title frame gives the title and credits. Timing comes from the
-MIDI file, so the tempo map (fermatas, ritardandos, ...) matches MuseScore's audio export.
-Score positions are assumed to map 1:1 to MIDI ticks, i.e. the score has no repeats.
+MIDI file, which is what the page plays, so the tempo map (fermatas, ritardandos, ...)
+matches the music. Score positions are assumed to map 1:1 to MIDI ticks, i.e. the score
+has no repeats. Each part gets the MIDI channels it plays on.
 """
 
 import html, json, re, struct, sys
@@ -27,16 +28,18 @@ def varlen(data, p):
             return value, p
 
 
-def midi_tempo_map(path):
-    """Returns (division, [(tick, seconds, seconds_per_tick)])."""
+def read_midi(path):
+    """Returns (division, [(tick, seconds, seconds_per_tick)], tracks), where tracks holds the set
+    of channels that each track plays notes on."""
     data = open(path, "rb").read()
     assert data[:4] == b"MThd"
     _, _, ntracks, division = struct.unpack(">IHHH", data[4:14])
-    pos, tempos = 14, []
+    pos, tempos, tracks = 14, [], []
     for _ in range(ntracks):
         assert data[pos : pos + 4] == b"MTrk"
         (length,) = struct.unpack(">I", data[pos + 4 : pos + 8])
         p, end, tick, status = pos + 8, pos + 8 + length, 0, 0
+        tracks.append(set())
         while p < end:
             delta, p = varlen(data, p)
             tick += delta
@@ -53,6 +56,8 @@ def midi_tempo_map(path):
                 ln, p = varlen(data, p)
                 p += ln
             else:
+                if status & 0xF0 == 0x90 and data[p + 1] > 0:
+                    tracks[-1].add(status & 0x0F)
                 p += 1 if (status & 0xF0) in (0xC0, 0xD0) else 2
         pos = end
     segs, sec, last_tick, spt = [(0, 0.0, 0.5 / division)], 0.0, 0, 0.5 / division
@@ -60,12 +65,12 @@ def midi_tempo_map(path):
         sec += (tick - last_tick) * spt
         last_tick, spt = tick, uspq / 1e6 / division
         segs.append((tick, sec, spt))
-    return division, segs
+    return division, segs, tracks
 
 
 def time_map(mid_path):
     """Returns a function mapping score positions in quarter notes to seconds."""
-    division, segs = midi_tempo_map(mid_path)
+    division, segs, _ = read_midi(mid_path)
 
     def to_sec(quarters):
         tick = float(quarters) * division
@@ -141,6 +146,28 @@ def parse_part(part):
     return sorted(events, key=lambda e: e[0]), measures, onsets
 
 
+def part_channels(root, mid_path):
+    """The MIDI channels of each part, by part id. MuseScore writes one track per staff, in score
+    order, and a part plays on all channels of its tracks: an instrument can have several, such as
+    a cello's arco, pizzicato and tremolo. The MusicXML names only each part's first channel, which
+    checks the mapping."""
+    tracks = read_midi(mid_path)[2]
+    channels, i = {}, 0
+    for sp, part in zip(root.findall("part-list/score-part"), root.findall("part")):
+        staves = int(part.findtext("measure/attributes/staves") or 1)
+        channels[sp.get("id")] = sorted(set().union(*tracks[i : i + staves]))
+        i += staves
+        first = int(sp.findtext("midi-instrument/midi-channel")) - 1
+        if channels[sp.get("id")] and first not in channels[sp.get("id")]:
+            sys.exit(
+                f"{sp.findtext('part-name')}: its tracks play on channels "
+                f"{channels[sp.get('id')]}, not on its MusicXML channel {first}"
+            )
+    if i != len(tracks):
+        sys.exit(f"the score has {i} staves, but the MIDI file has {len(tracks)} tracks")
+    return channels
+
+
 def credits(root, mscx):
     """The MusicXML export has no <credit> elements, so the texts of the title frame (the
     first VBox) come from the .mscx; the score's metadata, which is often left at its
@@ -166,16 +193,13 @@ def credits(root, mscx):
     return title, found.get("subtitle", ""), by
 
 
-def slug(name):
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-
-
 def main():
     xml_path, mid_path, src, out = sys.argv[1:5]
     to_sec = time_map(mid_path)
     root = ET.parse(xml_path).getroot()
     title, subtitle, by = credits(root, next(Path(src).glob("*.mscx")).read_text())
     names = {sp.get("id"): sp.findtext("part-name") for sp in root.findall("part-list/score-part")}
+    channels = part_channels(root, mid_path)
     result = {"title": title, "subtitle": subtitle, "credits": by, "parts": [], "voices": []}
     for part in root.findall("part"):
         name = names[part.get("id")]
@@ -183,7 +207,7 @@ def main():
         if "measures" not in result:
             result["measures"] = [to_sec(m) for m in measures]
         vocal = any(e[2] for e in events)
-        result["parts"].append({"name": name, "file": f"audio/{slug(name)}", "vocal": vocal})
+        result["parts"].append({"name": name, "channels": channels[part.get("id")], "vocal": vocal})
         if not vocal:
             continue
 

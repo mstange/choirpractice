@@ -1,12 +1,13 @@
 # Piece data (tools/build.sh), not checked in because the scores are licensed, except for the demo
+# and the soundfont files
 /media/*
 !/media/demo/
+!/media/soundfont/
 
 # MuseScore sources and intermediate exports, if copied here for building
 *.mscz
 !/media/demo/*.mscz
 *.mscx
-*.wav
 
 __pycache__/
 *.pyc

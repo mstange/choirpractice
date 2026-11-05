@@ -35,10 +35,10 @@ export class Session {
 
 	/**
 	 * Starts the piece saved under `key`, with these vocal parts: restores the selection and the
-	 * emphasis saved for it, or else carries them over from the previous piece. Returns the saved
-	 * accompaniment levels.
+	 * emphasis saved for it, or else carries them over from the previous piece. Returns what else
+	 * was saved for it.
 	 */
-	enter(key: string, voices: string[]): Record<string, number> {
+	enter(key: string, voices: string[]): Partial<Saved> {
 		const saved: Saved | null = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null');
 		const all = this.#voices.length > 1 && this.selected.length === this.#voices.length;
 		const restored = voices.filter((v) => saved?.selected.includes(v));
@@ -50,12 +50,21 @@ export class Session {
 		this.selected = matched.length ? matched : [voices[0]];
 		this.#voices = voices;
 		this.emphasis = saved?.emphasis ?? this.emphasis;
-		return saved?.levels ?? {};
+		return saved ?? {};
 	}
 }
 
-/** What is kept per piece across visits. */
-export type Saved = { selected: string[]; emphasis: number; levels: Record<string, number> };
+/**
+ * What is kept per piece across visits: also the accompaniment levels, the speed, and the
+ * instruments picked instead of the score's, by part name.
+ */
+export type Saved = {
+	selected: string[];
+	emphasis: number;
+	levels: Record<string, number>;
+	speed: number;
+	instruments: Record<string, number>;
+};
 
 const norm = (name: string) =>
 	name

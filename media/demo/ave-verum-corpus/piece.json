@@ -5,27 +5,37 @@
 "parts": [
 {
 "name": "Soprano",
-"file": "audio/soprano",
+"channels": [
+0
+],
 "vocal": true
 },
 {
 "name": "Alto",
-"file": "audio/alto",
+"channels": [
+1
+],
 "vocal": true
 },
 {
 "name": "Tenor",
-"file": "audio/tenor",
+"channels": [
+2
+],
 "vocal": true
 },
 {
 "name": "Bass",
-"file": "audio/bass",
+"channels": [
+3
+],
 "vocal": true
 },
 {
 "name": "Piano",
-"file": "audio/piano",
+"channels": [
+4
+],
 "vocal": false
 }
 ],
@@ -5101,11 +5111,5 @@
 42096.0
 ]
 }
-],
-"audio": {
-"rate": 44100,
-"length": 7561518,
-"chunk": 441000,
-"pad": 4410
-}
+]
 }

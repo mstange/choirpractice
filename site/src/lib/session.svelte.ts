@@ -3,7 +3,8 @@ import { Mic } from './mic.svelte.ts';
 /** What carries over from one piece to the next, and what each piece keeps across visits. */
 export class Session {
 	readonly mic = new Mic();
-	emphasis = $state(0.7);
+	/** How much quieter the other parts are, normally and while "Just me" is held, from 0 to 1. */
+	emphasis: [number, number] = $state([0.7, 1]);
 	/** Whether a piano doubles the selected parts, so that their notes' starts are easier to hear. */
 	extraPiano = $state(true);
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
@@ -62,7 +63,10 @@ export class Session {
 				: voices.filter((v) => this.selected.some((s) => equivalent(s, voices) === v));
 		this.selected = matched.length ? matched : [voices[0]];
 		this.#voices = voices;
-		this.emphasis = saved?.emphasis ?? this.emphasis;
+		// Before "Just me", a piece kept only the normal emphasis.
+		const emphasis = saved?.emphasis ?? this.emphasis;
+		this.emphasis =
+			typeof emphasis === 'number' ? [emphasis, Math.max(emphasis, this.emphasis[1])] : emphasis;
 		this.extraPiano = saved?.extraPiano ?? this.extraPiano;
 		return saved ?? {};
 	}
@@ -71,7 +75,7 @@ export class Session {
 /** What is kept per piece across visits: also the accompaniment levels and the speed. */
 export type Saved = {
 	selected: string[];
-	emphasis: number;
+	emphasis: [number, number] | number;
 	extraPiano: boolean;
 	levels: Record<string, number>;
 	speed: number;

@@ -99,6 +99,8 @@
 		changed = true;
 	});
 	let t = $state(0);
+	// While "Just me" is hovered, touched or J is held, the other parts take the high emphasis.
+	let justMe = $state(false);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
@@ -138,7 +140,7 @@
 
 	$effect(() => {
 		for (const { name, vocal } of parts) {
-			const unselected = 1 - 0.9 * session.emphasis;
+			const unselected = 1 - 0.9 * session.emphasis[justMe ? 1 : 0];
 			const gain = !vocal ? accompLevels[name] : session.selected.includes(name) ? 1 : unselected;
 			synth.setGain(name, gain);
 			const piano = session.extraPiano && session.selected.includes(name);
@@ -454,6 +456,8 @@
 			pick(voiceNames[+digit - 1], e.shiftKey);
 		} else if ((e.key === 'l' || e.key === 'L') && loop) {
 			loop = { ...loop, on: !loop.on };
+		} else if (e.key === 'j' || e.key === 'J') {
+			justMe = true;
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
@@ -498,7 +502,14 @@
 	}
 </script>
 
-<svelte:window {onkeydown} bind:innerHeight={windowHeight} />
+<svelte:window
+	{onkeydown}
+	onkeyup={(e) => {
+		if (e.key === 'j' || e.key === 'J') justMe = false;
+	}}
+	onblur={() => (justMe = false)}
+	bind:innerHeight={windowHeight}
+/>
 <svelte:head><title>{piece.title}</title></svelte:head>
 
 <div class="player" style:--bg-hue={hue}>
@@ -650,6 +661,18 @@
 				{/each}
 			</div>
 
+			<!-- A touch is captured by the button until it ends, so enter and leave also cover a touch
+			     that is held. -->
+			<button
+				class="just-me"
+				class:active={justMe}
+				disabled={session.selected.length === voiceNames.length}
+				title="Hover or hold to make the other parts quieter still (or hold J)"
+				onpointerenter={() => (justMe = true)}
+				onpointerleave={() => (justMe = false)}
+				oncontextmenu={(e) => e.preventDefault()}>Just me</button
+			>
+
 			<div class="segmented views" role="radiogroup" aria-label="View">
 				{#each VIEWS as v (v.id)}
 					<button role="radio" aria-checked={view === v.id} onclick={() => show(entry.slug, v.id)}
@@ -673,15 +696,47 @@
 			</button>
 			<button class="mix" popovertarget="mix-panel">Mix</button>
 			<div id="mix-panel" class="mix-panel" popover="auto" onbeforetoggle={placeAbove}>
-				<label for="emphasis" title="How much quieter the other parts are">Emphasis</label>
-				<input
-					id="emphasis"
-					type="range"
-					min="0"
-					max="1"
-					step="0.01"
-					bind:value={session.emphasis}
-				/>
+				<label
+					for="emphasis"
+					title="How much quieter the other parts are, normally and while Just me is held"
+					>Emphasis</label
+				>
+				<!-- Two range inputs on top of each other, of which only the thumbs take the pointer. When
+				     the thumbs meet, the one that can still move away from the end it is near is on top. -->
+				<div
+					class="range-pair"
+					class:low-on-top={session.emphasis[0] > 0.5}
+					style:--low={session.emphasis[0]}
+					style:--high={session.emphasis[1]}
+				>
+					<input
+						id="emphasis"
+						type="range"
+						min="0"
+						max="1"
+						step="0.01"
+						value={session.emphasis[0]}
+						oninput={(e) => {
+							const high = session.emphasis[1];
+							// The input moves on past the other thumb unless held back here.
+							e.currentTarget.value = String(Math.min(+e.currentTarget.value, high));
+							session.emphasis = [+e.currentTarget.value, high];
+						}}
+					/>
+					<input
+						type="range"
+						aria-label="Emphasis while Just me is held"
+						min="0"
+						max="1"
+						step="0.01"
+						value={session.emphasis[1]}
+						oninput={(e) => {
+							const low = session.emphasis[0];
+							e.currentTarget.value = String(Math.max(+e.currentTarget.value, low));
+							session.emphasis = [low, +e.currentTarget.value];
+						}}
+					/>
+				</div>
 				<label
 					class="check"
 					title="A piano also plays the selected parts, to make their notes' starts clearer"
@@ -741,9 +796,9 @@
 
 		<div class="hint">
 			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
-			all parts · V: switch view · M: microphone · L: loop on/off · Ctrl+wheel: zoom · drag the
-			notes to scroll, click a note or syllable to jump there · drag along the measure numbers to
-			set a loop
+			all parts · hold J: just me · V: switch view · M: microphone · L: loop on/off · Ctrl+wheel:
+			zoom · drag the notes to scroll, click a note or syllable to jump there · drag along the
+			measure numbers to set a loop
 		</div>
 	</footer>
 </div>
@@ -1069,6 +1124,19 @@
 	.views {
 		flex: none;
 	}
+	.just-me {
+		flex: none;
+		touch-action: none;
+		-webkit-touch-callout: none;
+	}
+	.just-me.active {
+		background: #eee;
+		color: #111;
+	}
+	.just-me:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
 	.mix {
 		flex: none;
 	}
@@ -1139,6 +1207,75 @@
 	}
 	.mix-panel option {
 		background: #222;
+	}
+	.range-pair {
+		--track: 4px;
+		--thumb: 16px;
+		position: relative;
+		height: var(--thumb);
+		/* The track, with the part between the thumbs filled. The thumbs' centers travel over the
+		   width less one thumb. */
+		background:
+			linear-gradient(
+					to right,
+					transparent calc(var(--thumb) / 2 + var(--low) * (100% - var(--thumb))),
+					#ddd 0 calc(var(--thumb) / 2 + var(--high) * (100% - var(--thumb))),
+					transparent 0
+				)
+				center / 100% var(--track) no-repeat,
+			linear-gradient(rgb(255 255 255 / 0.25), rgb(255 255 255 / 0.25)) center / 100% var(--track)
+				no-repeat;
+		border-radius: 999px;
+	}
+	.range-pair input {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		appearance: none;
+		background: transparent;
+		pointer-events: none;
+	}
+	.range-pair.low-on-top input:first-child {
+		z-index: 1;
+	}
+	.range-pair input:focus-visible {
+		outline: none;
+	}
+	.range-pair input::-webkit-slider-runnable-track {
+		height: 100%;
+		background: transparent;
+	}
+	.range-pair input::-moz-range-track {
+		background: transparent;
+	}
+	.range-pair input::-webkit-slider-thumb {
+		appearance: none;
+		width: var(--thumb);
+		height: var(--thumb);
+		border: 0;
+		border-radius: 50%;
+		background: #ddd;
+		pointer-events: auto;
+		cursor: pointer;
+	}
+	.range-pair input::-moz-range-thumb {
+		width: var(--thumb);
+		height: var(--thumb);
+		border: 0;
+		border-radius: 50%;
+		background: #ddd;
+		pointer-events: auto;
+		cursor: pointer;
+	}
+	.range-pair input:focus-visible::-webkit-slider-thumb {
+		outline: 2px solid #fff;
+		outline-offset: 2px;
+	}
+	.range-pair input:focus-visible::-moz-range-thumb {
+		outline: 2px solid #fff;
+		outline-offset: 2px;
 	}
 	.with-value {
 		display: flex;

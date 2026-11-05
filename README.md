@@ -88,6 +88,7 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
   ```sh
   rclone sync media/<season> r2:choirpractice-media/$(cat media/<season>.key) --header-upload "Cache-Control: no-cache"
   rclone sync media/demo r2:choirpractice-media/demo --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
+  rclone sync media/soundfont r2:choirpractice-media/soundfont --header-upload "Cache-Control: no-cache"
   ```
 - **Page:** `cd site && npm run deploy` builds the page with `VITE_MEDIA_BASE` set to the media host and uploads `site/build/` with `wrangler deploy`, as configured in `site/wrangler.jsonc`. The live page is whatever is in the working copy. Any other static host works too: build with `VITE_MEDIA_BASE=https://<media host> npm run build` and upload `site/build/`.
 

@@ -47,6 +47,7 @@
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
 	const SPEED_STEP = 0.1; // how much Slower and Faster change the speed
 	const PIANO_GAIN = 1; // the gain of the piano that doubles a selected part
+	const HOLD_MS = 300; // a press of Just me that lasts longer is a hold, not a tap
 	const SELECTED_BOOST = 0.5; // how much louder the selected parts get at full emphasis
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
@@ -101,8 +102,22 @@
 		changed = true;
 	});
 	let t = $state(0);
-	// While "Just me" is hovered, touched or J is held, the other parts take the high emphasis.
+	// While "Just me" is on, the other parts take the high emphasis. A press of its button or of J
+	// turns it on or off; a press that turns it on and is held longer than a tap turns it off again
+	// on release.
 	let justMe = $state(false);
+	let justMePressedAt: number | null = null;
+	function pressJustMe() {
+		justMe = !justMe;
+		justMePressedAt = justMe ? performance.now() : null;
+	}
+	function releaseJustMe() {
+		if (justMePressedAt !== null && performance.now() - justMePressedAt > HOLD_MS) justMe = false;
+		justMePressedAt = null;
+	}
+	$effect(() => {
+		if (session.selected.length === voiceNames.length) justMe = false;
+	});
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
@@ -496,8 +511,8 @@
 			pick(voiceNames[+digit - 1], e.shiftKey);
 		} else if ((e.key === 'l' || e.key === 'L') && loop) {
 			loop = { ...loop, on: !loop.on };
-		} else if (e.key === 'j' || e.key === 'J') {
-			justMe = true;
+		} else if ((e.key === 'j' || e.key === 'J') && !e.repeat) {
+			pressJustMe();
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
@@ -545,9 +560,9 @@
 <svelte:window
 	{onkeydown}
 	onkeyup={(e) => {
-		if (e.key === 'j' || e.key === 'J') justMe = false;
+		if (e.key === 'j' || e.key === 'J') releaseJustMe();
 	}}
-	onblur={() => (justMe = false)}
+	onblur={releaseJustMe}
 	bind:innerHeight={windowHeight}
 />
 <svelte:head><title>{piece.title}</title></svelte:head>
@@ -765,17 +780,25 @@
 					{/each}
 				</div>
 
-				<!-- A touch is captured by the button until it ends, so enter and leave also cover a touch
-			     that is held. -->
 				<button
 					class="just-me"
 					class:active={justMe}
 					style:--gradient={justMeGradient}
 					style:--glow={colors[session.selected[0]]}
 					disabled={session.selected.length === voiceNames.length}
-					title="Hover or hold to make the other parts quieter still (or hold J)"
-					onpointerenter={() => (justMe = true)}
-					onpointerleave={() => (justMe = false)}
+					aria-pressed={justMe}
+					title="Make the other parts quieter still: tap to turn on or off, or hold (or J)"
+					onpointerdown={(e) => {
+						if (e.button !== 0) return;
+						e.currentTarget.setPointerCapture(e.pointerId);
+						pressJustMe();
+					}}
+					onpointerup={releaseJustMe}
+					onpointercancel={releaseJustMe}
+					onclick={(e) => {
+						// A click from the keyboard, which has no pointer press.
+						if (e.detail === 0) pressJustMe();
+					}}
 					oncontextmenu={(e) => e.preventDefault()}
 				>
 					<svg viewBox="0 0 16 16" aria-hidden="true">
@@ -803,7 +826,7 @@
 			<div id="mix-panel" class="mix-panel" popover="auto" onbeforetoggle={placeAbove}>
 				<label
 					for="emphasis"
-					title="How much quieter the other parts are, normally and while Just me is held"
+					title="How much quieter the other parts are, normally and while Just me is on"
 					>Emphasis</label
 				>
 				<!-- Two range inputs on top of each other, of which only the thumbs take the pointer. When
@@ -830,7 +853,7 @@
 					/>
 					<input
 						type="range"
-						aria-label="Emphasis while Just me is held"
+						aria-label="Emphasis while Just me is on"
 						min="0"
 						max="1"
 						step="0.01"
@@ -889,9 +912,9 @@
 
 		<div class="hint">
 			Space: play/pause · ←/→: previous/next measure · Home: back to the start · −/+: slower/faster
-			· 1–9: pick part, with Shift: add/remove · 0: all parts · hold J: just me · V: switch view ·
-			M: microphone · L: loop on/off · Ctrl+wheel: zoom · drag the notes to scroll, click a note or
-			syllable to jump there · drag along the measure numbers to set a loop
+			· 1–9: pick part, with Shift: add/remove · 0: all parts · J: just me (tap or hold) · V: switch
+			view · M: microphone · L: loop on/off · Ctrl+wheel: zoom · drag the notes to scroll, click a
+			note or syllable to jump there · drag along the measure numbers to set a loop
 		</div>
 	</footer>
 </div>
@@ -1279,8 +1302,8 @@
 		stroke: #111;
 	}
 
-	/* Just me is held rather than clicked, so it doesn't look like the other buttons: it has a
-	   border in the selected parts' colors, and while held it fills with them, flowing and glowing. */
+	/* Just me has a border in the selected parts' colors, and while on it fills with them, flowing
+	   and glowing. */
 	.just-me,
 	.just-me:hover {
 		flex: none;

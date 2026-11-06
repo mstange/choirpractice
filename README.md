@@ -5,7 +5,7 @@ A static web page that plays a MuseScore score as music plus a visual display:
 - **Pitch:** SingStar-style note bars on a shared pitch axis, with the sheet music in a strip below them.
 - **Lyrics:** karaoke-style lyric lines.
 
-The user picks one or more dominant parts (shift-click adds or removes a part). Those parts are drawn prominently and are louder in the mix, and while the "Just me" button is hovered or touched and held, or J is held, the other parts get quieter still. The page plays the score's MIDI file with soundfont instruments in the browser, so the music can play slower or faster at the same pitch, and the vocal parts can play on another instrument, such as a pan flute.
+The user picks one or more dominant parts (shift-click adds or removes a part). Those parts are drawn prominently and are louder in the mix, and while the "Just me" button is on, the other parts get quieter still. A tap of the button (or of J) turns it on or off; a press held longer than a tap turns it on only until it is released. The page plays the score's MIDI file with soundfont instruments in the browser, so the music can play slower or faster at the same pitch, and the vocal parts can play on another instrument, such as a pan flute.
 
 The pieces come in **seasons**: a season is a directory with a `pieces.json` and one directory per piece, and the page opens one with `index.html#/<season>/<slug>`. The scores are licensed, so their data isn't part of this repository and the deployed page fetches it from a separate host, where each season's directory is named by a secret key (see Deploying).
 

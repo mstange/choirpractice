@@ -16,3 +16,19 @@ export async function loadSeason(
 	if (!res.ok) throw new Error(`${res.url}: ${res.status} ${res.statusText}`);
 	return res.json();
 }
+
+/** The seasons opened before, most recent first, kept in localStorage. */
+export function visitedSeasons(): string[] {
+	return JSON.parse(globalThis.localStorage?.getItem('seasons') ?? '[]');
+}
+
+/** Puts a season first among the visited ones. The demo is linked from the start page anyway. */
+export function rememberSeason(season: string) {
+	if (season === 'demo') return;
+	const seasons = [season, ...visitedSeasons().filter((s) => s !== season)];
+	localStorage.setItem('seasons', JSON.stringify(seasons));
+}
+
+export function forgetSeason(season: string) {
+	localStorage.setItem('seasons', JSON.stringify(visitedSeasons().filter((s) => s !== season)));
+}

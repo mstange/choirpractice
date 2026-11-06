@@ -46,9 +46,9 @@
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
 	const SPEED_STEP = 0.1; // how much Slower and Faster change the speed
-	const PIANO_GAIN = 1; // the gain of the piano that doubles a selected part
 	const HOLD_MS = 300; // a press of Just me that lasts longer is a hold, not a tap
 	const SELECTED_BOOST = 0.5; // how much louder the selected parts get at full emphasis
+	const PIANO_BOOST = 1.5; // how much louder the piano that doubles them gets at full emphasis
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -177,10 +177,11 @@
 	);
 
 	$effect(() => {
-		// Emphasis makes the selected parts louder, the other vocal parts quieter and the
-		// accompaniment quieter still, silent at full emphasis.
+		// Emphasis makes the selected parts louder, their piano louder still, the other vocal parts
+		// quieter and the accompaniment quieter still, silent at full emphasis.
 		const emphasis = session.emphasis[justMeHeard ? 1 : 0];
 		const selected = 1 + SELECTED_BOOST * emphasis;
+		const pianoGain = 1 + PIANO_BOOST * emphasis;
 		for (const { name, vocal } of parts) {
 			const isSelected = session.selected.includes(name);
 			const gain = !vocal
@@ -190,7 +191,7 @@
 					: 1 - 0.9 * emphasis;
 			synth.setGain(name, gain);
 			const piano = session.extraPiano && isSelected;
-			if (vocal) synth.setPianoGain(name, piano ? PIANO_GAIN * selected : 0);
+			if (vocal) synth.setPianoGain(name, piano ? pianoGain : 0);
 		}
 	});
 

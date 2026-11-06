@@ -47,6 +47,7 @@
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
 	const SPEED_STEP = 0.1; // how much Slower and Faster change the speed
 	const PIANO_GAIN = 1; // the gain of the piano that doubles a selected part
+	const SELECTED_BOOST = 0.5; // how much louder the selected parts get at full emphasis
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -147,12 +148,20 @@
 	);
 
 	$effect(() => {
+		// Emphasis makes the selected parts louder, the other vocal parts quieter and the
+		// accompaniment quieter still, silent at full emphasis.
+		const emphasis = session.emphasis[justMe ? 1 : 0];
+		const selected = 1 + SELECTED_BOOST * emphasis;
 		for (const { name, vocal } of parts) {
-			const unselected = 1 - 0.9 * session.emphasis[justMe ? 1 : 0];
-			const gain = !vocal ? accompLevels[name] : session.selected.includes(name) ? 1 : unselected;
+			const isSelected = session.selected.includes(name);
+			const gain = !vocal
+				? accompLevels[name] * (1 - emphasis)
+				: isSelected
+					? selected
+					: 1 - 0.9 * emphasis;
 			synth.setGain(name, gain);
-			const piano = session.extraPiano && session.selected.includes(name);
-			if (vocal) synth.setPianoGain(name, piano ? PIANO_GAIN : 0);
+			const piano = session.extraPiano && isSelected;
+			if (vocal) synth.setPianoGain(name, piano ? PIANO_GAIN * selected : 0);
 		}
 	});
 

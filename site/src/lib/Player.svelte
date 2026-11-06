@@ -628,7 +628,7 @@
 	</main>
 
 	<footer>
-		{#if view === 'pitch' && sheet}
+		{#if sheet}
 			<canvas
 				class="sheet"
 				style:height="{sheetHeight}px"

@@ -338,6 +338,8 @@
 		flex-direction: column;
 		justify-content: center;
 		min-height: 0;
+		/* Keeps the labels off the header when the rows fill the stage. */
+		padding-top: 12px;
 		position: relative;
 		container-type: size;
 	}

@@ -33,6 +33,8 @@ export function rememberSeason(season: string) {
 export async function forgetSeason(season: string) {
 	localStorage.setItem('seasons', JSON.stringify(visitedSeasons().filter((s) => s !== season)));
 	setSavedOffline(season, false);
+	// Cache Storage needs a secure context.
+	if (!globalThis.caches) return;
 	const cache = await caches.open(MEDIA_CACHE);
 	const prefix = new URL(mediaUrl(season, ''), document.baseURI).href;
 	for (const req of await cache.keys()) if (req.url.startsWith(prefix)) await cache.delete(req);

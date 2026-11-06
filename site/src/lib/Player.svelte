@@ -45,6 +45,7 @@
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
+	const SPEED_STEP = 0.1; // how much Slower and Faster change the speed
 	const PIANO_GAIN = 1; // the gain of the piano that doubles a selected part
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
@@ -133,6 +134,13 @@
 		synth.setVocalProgram(session.vocalProgram);
 	});
 	const selectedSet = $derived(new Set(session.selected));
+	// The Just me button flows with the selected parts' colors, one part's with a lighter shade of
+	// it. The colors come twice, so that sliding the gradient by half its width starts it over.
+	const justMeGradient = $derived.by(() => {
+		const cs = session.selected.map((n) => colors[n]);
+		if (cs.length === 1) cs.push(`color-mix(in oklab, ${cs[0]} 45%, white)`);
+		return `linear-gradient(90deg, ${[...cs, ...cs, cs[0]].join(', ')})`;
+	});
 	const measure = $derived(measureAt(t));
 	const hue = $derived(
 		hueTimes.filter(([st]) => st <= t + 1).pop()?.[1] ?? hueTimes[0]?.[1] ?? 215
@@ -200,6 +208,24 @@
 	function seek(time: number) {
 		synth.seek(time);
 		t = synth.now();
+	}
+
+	/** Goes to the start of the loop while looping is on, else to the start of the piece. */
+	function toStart() {
+		seek(loopTimes ? loopTimes[0] : 0);
+	}
+
+	/** Goes to the start of the next measure, or of the previous one if it is just past this one's. */
+	function stepMeasure(d: 1 | -1) {
+		const m = measureAt(t + 0.3) + d;
+		seek(measures[Math.max(0, Math.min(m, measures.length - 2))]);
+	}
+
+	/** Goes to the next multiple of the speed step, faster or slower. */
+	function stepSpeed(d: 1 | -1) {
+		const steps = speed / SPEED_STEP;
+		const next = (d > 0 ? Math.floor(steps + 1e-6) + 1 : Math.ceil(steps - 1e-6) - 1) * SPEED_STEP;
+		speed = Math.round(Math.min(Math.max(next, SPEEDS[0]), SPEEDS[1]) * 100) / 100;
 	}
 
 	function togglePlay() {
@@ -448,8 +474,13 @@
 			e.preventDefault();
 			togglePlay();
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-			const m = measureAt(t + 0.3) + (e.key === 'ArrowRight' ? 1 : -1);
-			seek(measures[Math.max(0, Math.min(m, measures.length - 2))]);
+			stepMeasure(e.key === 'ArrowRight' ? 1 : -1);
+		} else if (e.key === 'Home') {
+			toStart();
+		} else if (e.key === '-') {
+			stepSpeed(-1);
+		} else if (e.key === '+' || e.key === '=') {
+			stepSpeed(1);
 		} else if (digit === '0') {
 			session.selected = voiceNames;
 		} else if (digit && voiceNames[+digit - 1]) {
@@ -524,9 +555,18 @@
 				<option value={p.slug}>{p.label}</option>
 			{/each}
 		</select>
-		<h1>{piece.title}</h1>
-		<div class="credits">
-			{[piece.subtitle, piece.credits].filter(Boolean).join(' · ')}
+		<div class="title">
+			<h1>{piece.title}</h1>
+			<div class="credits">
+				{[piece.subtitle, piece.credits].filter(Boolean).join(' · ')}
+			</div>
+		</div>
+		<div class="segmented views" role="radiogroup" aria-label="View">
+			{#each VIEWS as v (v.id)}
+				<button role="radio" aria-checked={view === v.id} onclick={() => show(entry.slug, v.id)}
+					>{v.label}</button
+				>
+			{/each}
 		</div>
 	</header>
 
@@ -569,9 +609,28 @@
 		<div class="controls">
 			<div class="transport">
 				<button
+					class="icon"
+					aria-label="Back to the start"
+					title="Back to the start (Home)"
+					onclick={toStart}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h2v10H3zM13.5 3v10L6 8z" /></svg>
+				</button>
+				<button
+					class="icon"
+					aria-label="Previous measure"
+					title="Previous measure (←)"
+					onclick={() => stepMeasure(-1)}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true"
+						><path d="M8 3.5v9L1.5 8zM14.5 3.5v9L8 8z" /></svg
+					>
+				</button>
+				<button
 					class="play"
 					class:waiting={synth.waiting}
 					aria-label={synth.playing ? 'Pause' : 'Play'}
+					title={synth.playing ? 'Pause (Space)' : 'Play (Space)'}
 					onclick={togglePlay}
 				>
 					<svg viewBox="0 0 16 16" aria-hidden="true">
@@ -582,103 +641,140 @@
 						{/if}
 					</svg>
 				</button>
-				<div class="time">
-					{#if synth.error}
-						<span class="error" title={synth.error}>Audio failed</span>
-					{:else}
-						<span>{fmt(t)} / {fmt(synth.duration)}</span>
-					{/if}
-					<span class="measure">m. {measure + 1}</span>
-				</div>
-			</div>
-
-			<div
-				class="segmented parts"
-				role="group"
-				aria-label="Dominant parts"
-				title="Shift-click to select several parts"
-				{@attach scrollFades}
-			>
 				<button
-					class="all"
-					aria-pressed={session.selected.length === voiceNames.length}
-					onclick={() => (session.selected = voiceNames)}>All</button
+					class="icon"
+					aria-label="Next measure"
+					title="Next measure (→)"
+					onclick={() => stepMeasure(1)}
 				>
-				{#each voiceNames as name (name)}
-					<button
-						style:--c={colors[name]}
-						bind:this={partButtons[name]}
-						aria-pressed={selectedSet.has(name)}
-						onclick={(e) => pick(name, e.shiftKey || e.metaKey)}>{name}</button
+					<svg viewBox="0 0 16 16" aria-hidden="true"
+						><path d="M8 3.5v9L14.5 8zM1.5 3.5v9L8 8z" /></svg
 					>
-				{/each}
+				</button>
+			</div>
+			<div class="time">
+				{#if synth.error}
+					<span class="error" title={synth.error}>Audio failed</span>
+				{:else}
+					<span>{fmt(t)} / {fmt(synth.duration)}</span>
+				{/if}
+				<span class="measure">m. {measure + 1}</span>
 			</div>
 
-			<!-- On narrow screens the parts don't fit in a row, and touch screens have no Shift. -->
-			<button class="parts-menu" popovertarget="parts-panel" aria-label="Dominant parts">
-				<span class="label">
-					{#if session.selected.length === voiceNames.length}
-						All parts
-					{:else}
-						{#each session.selected as name, i (name)}
-							{#if i},{/if}
-							<span style:color={colors[name]}>{name}</span>
-						{/each}
-					{/if}
-				</span>
-				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>
-			</button>
-			<div id="parts-panel" class="parts-panel" popover="auto" onbeforetoggle={placeAbove}>
+			<div class="segmented speed" role="group" aria-label="Speed">
 				<button
-					class="solo"
-					aria-pressed={session.selected.length === voiceNames.length}
-					onclick={(e) => {
-						session.selected = voiceNames;
-						e.currentTarget.closest<HTMLElement>('[popover]')!.hidePopover();
-					}}>All</button
+					aria-label="Slower"
+					title="Slower (−)"
+					disabled={speed <= SPEEDS[0]}
+					onclick={() => stepSpeed(-1)}
 				>
-				<span></span>
-				{#each voiceNames as name (name)}
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9" /></svg>
+				</button>
+				<button
+					class="speed-value"
+					class:changed={speed !== 1}
+					title="How fast the music plays; click for normal speed"
+					onclick={() => (speed = 1)}>{Math.round(speed * 100)}%</button
+				>
+				<button
+					aria-label="Faster"
+					title="Faster (+)"
+					disabled={speed >= SPEEDS[1]}
+					onclick={() => stepSpeed(1)}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9" /></svg>
+				</button>
+			</div>
+
+			<div class="who">
+				<div
+					class="segmented parts"
+					role="group"
+					aria-label="Dominant parts"
+					title="Shift-click to select several parts"
+					{@attach scrollFades}
+				>
+					<button
+						class="all"
+						aria-pressed={session.selected.length === voiceNames.length}
+						onclick={() => (session.selected = voiceNames)}>All</button
+					>
+					{#each voiceNames as name (name)}
+						<button
+							style:--c={colors[name]}
+							bind:this={partButtons[name]}
+							aria-pressed={selectedSet.has(name)}
+							onclick={(e) => pick(name, e.shiftKey || e.metaKey)}>{name}</button
+						>
+					{/each}
+				</div>
+
+				<!-- On narrow screens the parts don't fit in a row, and touch screens have no Shift. -->
+				<button class="parts-menu" popovertarget="parts-panel" aria-label="Dominant parts">
+					<span class="label">
+						{#if session.selected.length === voiceNames.length}
+							All parts
+						{:else}
+							{#each session.selected as name, i (name)}
+								{#if i},{/if}
+								<span style:color={colors[name]}>{name}</span>
+							{/each}
+						{/if}
+					</span>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>
+				</button>
+				<div id="parts-panel" class="parts-panel" popover="auto" onbeforetoggle={placeAbove}>
 					<button
 						class="solo"
-						style:--c={colors[name]}
-						aria-pressed={session.selected.length === 1 && session.selected[0] === name}
+						aria-pressed={session.selected.length === voiceNames.length}
 						onclick={(e) => {
-							pick(name, false);
+							session.selected = voiceNames;
 							e.currentTarget.closest<HTMLElement>('[popover]')!.hidePopover();
-						}}>{name}</button
+						}}>All</button
 					>
-					<button
-						class="add"
-						role="checkbox"
-						style:--c={colors[name]}
-						aria-checked={selectedSet.has(name)}
-						aria-label="Also {name}"
-						onclick={() => pick(name, true)}
-					>
-						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" /></svg>
-					</button>
-				{/each}
-			</div>
+					<span></span>
+					{#each voiceNames as name (name)}
+						<button
+							class="solo"
+							style:--c={colors[name]}
+							aria-pressed={session.selected.length === 1 && session.selected[0] === name}
+							onclick={(e) => {
+								pick(name, false);
+								e.currentTarget.closest<HTMLElement>('[popover]')!.hidePopover();
+							}}>{name}</button
+						>
+						<button
+							class="add"
+							role="checkbox"
+							style:--c={colors[name]}
+							aria-checked={selectedSet.has(name)}
+							aria-label="Also {name}"
+							onclick={() => pick(name, true)}
+						>
+							<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" /></svg>
+						</button>
+					{/each}
+				</div>
 
-			<!-- A touch is captured by the button until it ends, so enter and leave also cover a touch
+				<!-- A touch is captured by the button until it ends, so enter and leave also cover a touch
 			     that is held. -->
-			<button
-				class="just-me"
-				class:active={justMe}
-				disabled={session.selected.length === voiceNames.length}
-				title="Hover or hold to make the other parts quieter still (or hold J)"
-				onpointerenter={() => (justMe = true)}
-				onpointerleave={() => (justMe = false)}
-				oncontextmenu={(e) => e.preventDefault()}>Just me</button
-			>
-
-			<div class="segmented views" role="radiogroup" aria-label="View">
-				{#each VIEWS as v (v.id)}
-					<button role="radio" aria-checked={view === v.id} onclick={() => show(entry.slug, v.id)}
-						>{v.label}</button
-					>
-				{/each}
+				<button
+					class="just-me"
+					class:active={justMe}
+					style:--gradient={justMeGradient}
+					style:--glow={colors[session.selected[0]]}
+					disabled={session.selected.length === voiceNames.length}
+					title="Hover or hold to make the other parts quieter still (or hold J)"
+					onpointerenter={() => (justMe = true)}
+					onpointerleave={() => (justMe = false)}
+					oncontextmenu={(e) => e.preventDefault()}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true">
+						<circle cx="8" cy="8" r="2.5" />
+						<circle cx="8" cy="8" r="6" fill="none" />
+					</svg>
+					Just me
+				</button>
 			</div>
 
 			<button
@@ -744,18 +840,6 @@
 					<input type="checkbox" bind:checked={session.extraPiano} />
 					Extra Piano
 				</label>
-				<label for="speed" title="How fast the music plays">Speed</label>
-				<div class="with-value">
-					<input
-						id="speed"
-						type="range"
-						min={SPEEDS[0]}
-						max={SPEEDS[1]}
-						step="0.05"
-						bind:value={speed}
-					/>
-					<output for="speed">{Math.round(speed * 100)}%</output>
-				</div>
 				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
 					>Mic delay</label
 				>
@@ -795,10 +879,10 @@
 		</div>
 
 		<div class="hint">
-			Space: play/pause · ←/→: previous/next measure · 1–9: pick part, with Shift: add/remove · 0:
-			all parts · hold J: just me · V: switch view · M: microphone · L: loop on/off · Ctrl+wheel:
-			zoom · drag the notes to scroll, click a note or syllable to jump there · drag along the
-			measure numbers to set a loop
+			Space: play/pause · ←/→: previous/next measure · Home: back to the start · −/+: slower/faster
+			· 1–9: pick part, with Shift: add/remove · 0: all parts · hold J: just me · V: switch view ·
+			M: microphone · L: loop on/off · Ctrl+wheel: zoom · drag the notes to scroll, click a note or
+			syllable to jump there · drag along the measure numbers to set a loop
 		</div>
 	</footer>
 </div>
@@ -823,22 +907,30 @@
 		transition: --bg-hue 3s;
 	}
 
+	/* What is shown: the piece on the left, the view on the right. */
 	header {
-		position: relative;
-		text-align: center;
-		padding: 18px 4vw 0;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+		align-items: start;
+		gap: 12px;
+		padding: 14px 4vw 0;
 	}
 	.piece {
-		position: absolute;
-		left: 4vw;
-		top: 18px;
-		max-width: 22vw;
+		justify-self: start;
+		max-width: 100%;
 		font: inherit;
 		color: inherit;
 		background: var(--surface);
 		border: 1px solid var(--border);
-		border-radius: 6px;
-		padding: 4px 8px;
+		border-radius: 999px;
+		padding: 5px 10px;
+	}
+	.title {
+		text-align: center;
+		min-width: 0;
+	}
+	.views {
+		justify-self: end;
 	}
 	.piece option {
 		background: #222;
@@ -921,21 +1013,43 @@
 		background: rgb(255 255 255 / 0.14);
 	}
 
+	/* What is played: transport, speed, who sings, and the mix. */
 	.transport {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 4px;
 		flex: none;
 	}
+	/* Round, borderless buttons with just an icon. */
+	.icon {
+		width: 34px;
+		height: 34px;
+		padding: 0;
+		display: grid;
+		place-items: center;
+		background: transparent;
+		border: 0;
+		opacity: 0.85;
+	}
+	.icon:hover {
+		opacity: 1;
+	}
+	.icon svg {
+		width: 15px;
+		height: 15px;
+		fill: currentColor;
+	}
 	.play {
-		width: 38px;
-		height: 38px;
+		width: 44px;
+		height: 44px;
+		margin-inline: 2px;
 		padding: 0;
 		display: grid;
 		place-items: center;
 		background: #eee;
 		color: #111;
 		border: 0;
+		box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
 	}
 	.play:hover {
 		background: #fff;
@@ -960,7 +1074,8 @@
 		font-size: 12px;
 		line-height: 1.3;
 		font-variant-numeric: tabular-nums;
-		min-width: 7.5em;
+		white-space: nowrap;
+		min-width: 6.5em;
 		opacity: 0.8;
 	}
 	.measure {
@@ -991,13 +1106,53 @@
 		background: var(--c, #ddd);
 		color: #111;
 	}
+	.segmented button:disabled {
+		opacity: 0.35;
+		background: transparent;
+		cursor: default;
+	}
+
+	.speed {
+		flex: none;
+		align-items: center;
+	}
+	.speed button:not(.speed-value) {
+		display: grid;
+		place-items: center;
+		padding: 4px 8px;
+	}
+	.speed svg {
+		width: 14px;
+		height: 14px;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+	}
+	.speed-value {
+		min-width: 4.2em;
+		padding-inline: 4px;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.8;
+	}
+	.speed-value.changed {
+		opacity: 1;
+		font-weight: 600;
+	}
+
+	.who {
+		flex: 0 1 auto;
+		min-width: 0;
+		margin-inline: auto;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
 
 	.parts {
 		--fade-start: 0px;
 		--fade-end: 0px;
 		flex: 0 1 auto;
 		min-width: 0;
-		margin-inline: auto;
 		overflow-x: auto;
 		scrollbar-width: none;
 		mask-image: linear-gradient(
@@ -1103,40 +1258,132 @@
 		stroke: #111;
 	}
 
-	@media (max-width: 700px) {
+	/* Just me is held rather than clicked, so it doesn't look like the other buttons: it has a
+	   border in the selected parts' colors, and while held it fills with them, flowing and glowing. */
+	.just-me,
+	.just-me:hover {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 14px 5px 11px;
+		font-weight: 600;
+		border: 1.5px solid transparent;
+		background:
+			linear-gradient(hsl(var(--bg-hue) 20% 11%), hsl(var(--bg-hue) 20% 11%)) padding-box,
+			var(--gradient) border-box;
+		background-size:
+			100% 100%,
+			200% 100%;
+		touch-action: none;
+		-webkit-touch-callout: none;
+	}
+	.just-me svg {
+		width: 14px;
+		height: 14px;
+		fill: currentColor;
+		stroke: currentColor;
+		stroke-width: 1.5;
+	}
+	.just-me.active {
+		color: #111;
+		background: var(--gradient) border-box;
+		background-size: 200% 100%;
+		animation:
+			flow 1.6s linear infinite,
+			glow 1.2s ease-in-out infinite alternate;
+	}
+	@keyframes flow {
+		to {
+			background-position: 100% 0;
+		}
+	}
+	@keyframes glow {
+		from {
+			box-shadow: 0 0 6px 0 color-mix(in srgb, var(--glow) 50%, transparent);
+		}
+		to {
+			box-shadow: 0 0 18px 4px color-mix(in srgb, var(--glow) 70%, transparent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.just-me.active {
+			animation: none;
+			box-shadow: 0 0 14px 2px color-mix(in srgb, var(--glow) 60%, transparent);
+		}
+	}
+	.just-me:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+
+	/* Too narrow for one row: transport, time and speed in the first, who sings, mic and mix in
+	   the second. */
+	@media (max-width: 1050px) {
 		.controls {
-			flex-wrap: wrap;
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			grid-template-areas: 'transport time speed speed' 'who who mic mix';
+			gap: 8px;
+		}
+		.transport {
+			grid-area: transport;
+		}
+		.time {
+			grid-area: time;
+			min-width: 0;
+		}
+		.speed {
+			grid-area: speed;
+		}
+		.who {
+			grid-area: who;
+			margin: 0;
+		}
+		.mic {
+			grid-area: mic;
+		}
+		.mix {
+			grid-area: mix;
+		}
+	}
+
+	@media (max-width: 700px) {
+		header {
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas: 'piece views' 'title title';
+			row-gap: 6px;
+		}
+		.piece {
+			grid-area: piece;
+		}
+		.views {
+			grid-area: views;
+		}
+		.title {
+			grid-area: title;
+		}
+		h1 {
+			font-size: 24px;
+		}
+		.icon {
+			width: 30px;
+		}
+		.speed-value {
+			min-width: 3.6em;
+		}
+		.speed button:not(.speed-value) {
+			padding-inline: 6px;
 		}
 		.parts {
 			display: none;
 		}
-		/* Takes the rest of the first row, so that the other controls wrap into the second. */
 		.parts-menu {
 			display: flex;
-			flex: 1 0 50%;
-			margin-inline-start: auto;
-		}
-		.views {
-			margin-inline-start: auto;
+			flex: 1;
 		}
 	}
 
-	.views {
-		flex: none;
-	}
-	.just-me {
-		flex: none;
-		touch-action: none;
-		-webkit-touch-callout: none;
-	}
-	.just-me.active {
-		background: #eee;
-		color: #111;
-	}
-	.just-me:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
 	.mix {
 		flex: none;
 	}

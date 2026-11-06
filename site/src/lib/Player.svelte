@@ -130,6 +130,8 @@
 		addEventListener('pointerup', end);
 		addEventListener('pointercancel', end);
 	}
+	// Whether the mix has the Just me emphasis, which the Just me button shows.
+	const justMeHeard = $derived(emphasisPreview === null ? justMe : emphasisPreview === 1);
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
@@ -177,7 +179,7 @@
 	$effect(() => {
 		// Emphasis makes the selected parts louder, the other vocal parts quieter and the
 		// accompaniment quieter still, silent at full emphasis.
-		const emphasis = session.emphasis[emphasisPreview ?? (justMe ? 1 : 0)];
+		const emphasis = session.emphasis[justMeHeard ? 1 : 0];
 		const selected = 1 + SELECTED_BOOST * emphasis;
 		for (const { name, vocal } of parts) {
 			const isSelected = session.selected.includes(name);
@@ -794,7 +796,7 @@
 
 				<button
 					class="just-me"
-					class:active={justMe}
+					class:active={justMeHeard}
 					style:--gradient={justMeGradient}
 					style:--glow={colors[session.selected[0]]}
 					disabled={session.selected.length === voiceNames.length}

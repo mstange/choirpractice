@@ -4,7 +4,7 @@ import { Mic } from './mic.svelte.ts';
 export class Session {
 	readonly mic = new Mic();
 	/** How much quieter the other parts are, normally and while "Just me" is held, from 0 to 1. */
-	emphasis: [number, number] = $state([0.7, 1]);
+	emphasis: [number, number] = $state([0.2, 0.95]);
 	/** Whether a piano doubles the selected parts, so that their notes' starts are easier to hear. */
 	extraPiano = $state(true);
 	/** The selected parts, and all vocal parts of the piece they were selected in. */

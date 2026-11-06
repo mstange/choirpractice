@@ -674,7 +674,7 @@
 					class="speed-value"
 					class:changed={speed !== 1}
 					title="How fast the music plays; click for normal speed"
-					onclick={() => (speed = 1)}>{Math.round(speed * 100)}%</button
+					onclick={() => (speed = 1)}><span>{Math.round(speed * 100)}%</span></button
 				>
 				<button
 					aria-label="Faster"
@@ -1128,13 +1128,25 @@
 		stroke-width: 1.8;
 		stroke-linecap: round;
 	}
+	/* As wide as the widest value, bold, whatever the value is. */
 	.speed-value {
-		min-width: 4.2em;
-		padding-inline: 4px;
+		display: grid;
+		justify-items: center;
 		font-variant-numeric: tabular-nums;
+	}
+	.speed-value::before {
+		content: '000%';
+		font-weight: 600;
+		visibility: hidden;
+	}
+	.speed-value::before,
+	.speed-value span {
+		grid-area: 1 / 1;
+	}
+	.speed-value span {
 		opacity: 0.8;
 	}
-	.speed-value.changed {
+	.speed-value.changed span {
 		opacity: 1;
 		font-weight: 600;
 	}
@@ -1368,9 +1380,6 @@
 		}
 		.icon {
 			width: 30px;
-		}
-		.speed-value {
-			min-width: 3.6em;
 		}
 		.speed button:not(.speed-value) {
 			padding-inline: 6px;

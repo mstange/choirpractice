@@ -1264,6 +1264,8 @@
 	.parts-panel {
 		position: fixed;
 		inset: auto;
+		/* Not the popover's fit-content, which Safari 26 stretches up to the max-height. */
+		height: auto;
 		margin: 0;
 		padding: 6px;
 		color: inherit;
@@ -1469,6 +1471,8 @@
 	.mix-panel {
 		position: fixed;
 		inset: auto;
+		/* Not the popover's fit-content, which Safari 26 stretches up to the max-height. */
+		height: auto;
 		margin: 0;
 		padding: 14px 16px;
 		color: inherit;

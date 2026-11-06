@@ -10,9 +10,9 @@ const LEAD = 0.05;
 const PIANO = 0;
 /**
  * The velocity of the piano that doubles a note of this velocity: it follows the part's dynamics
- * in the upper half of the range, since a soft piano note is hard to hear beside a choir sound.
+ * in the range from 32 to 100, since a soft piano note is hard to hear beside a choir sound.
  */
-const pianoVelocity = (vel: number) => (vel ? Math.round(64 + vel / 2) : 0);
+const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32)) / 128) : 0);
 
 /**
  * Plays a piece's score.mid with soundfont instruments, each part on its MIDI channels.

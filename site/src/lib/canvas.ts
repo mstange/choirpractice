@@ -181,9 +181,15 @@ export function drawBars(
 			const x0 = X(n.t0) - grow / 2,
 				x1 = X(n.t1) - 3 + grow / 2,
 				top = y(n.p) - h / 2;
-			// Connect notes of a melisma.
-			const next = notes[i + 1];
-			if (!L.outline && next && next.s === n.s && next.t0 - n.t1 < 0.01 && next.p !== n.p) {
+			// Connect notes of a melisma, each to the closest pitch of the notes that follow it,
+			// since a chord's notes come one after the other.
+			let next: Note | undefined;
+			for (let j = i + 1; j < notes.length && notes[j].t0 < n.t1 + 0.01; j++) {
+				const m = notes[j];
+				if (m.s === n.s && Math.abs(m.t0 - n.t1) < 0.01)
+					if (!next || Math.abs(m.p - n.p) < Math.abs(next.p - n.p)) next = m;
+			}
+			if (!L.outline && next && next.p !== n.p) {
 				g.globalAlpha = L.alpha * 0.5;
 				g.beginPath();
 				g.moveTo(x1 - h / 2, y(n.p));

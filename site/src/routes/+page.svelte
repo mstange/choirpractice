@@ -37,11 +37,12 @@
 		you.
 	</p>
 
-	{#each data.seasons as { season, pieces } (season)}
+	{#each data.seasons as { season, loaded } (season)}
 		<section>
-			{#if pieces}
+			{#if loaded}
+				<h2>{loaded.title}</h2>
 				<ul>
-					{#each pieces as entry (entry.slug)}
+					{#each loaded.pieces as entry (entry.slug)}
 						<li>
 							<a href={resolve('/[season]/[slug]/[[view=view]]', { season, slug: entry.slug })}
 								>{entry.label}</a
@@ -95,6 +96,11 @@
 		/* The body doesn't scroll, for the player's sake. */
 		height: 100%;
 		overflow-y: auto;
+	}
+
+	h2 {
+		margin: 0.6em 0 0;
+		font-size: 1.1em;
 	}
 
 	section {

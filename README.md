@@ -14,7 +14,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 ## Layout
 
 - `media/<season>/`: the data of a season's pieces. It is not checked in (see `.gitignore`), except for `media/demo/`.
-  - `pieces.json` lists the pieces offered in the piece menu.
+  - `pieces.json` has the season's title, shown on the start page, and lists the pieces offered in the piece menu: `{ "title": "Winter 2026", "pieces": [...] }`.
   - `<slug>/` holds the data of one piece, written by `tools/build.sh`.
   - `media/demo/` is a season of public-domain pieces, so that the page works without a licensed score: Frère Jacques as a round in four parts, and Mozart's Ave verum corpus for SATB choir and piano. Their scores are `media/demo/<slug>.mscz`; rebuild one with `tools/build.sh media/demo/<slug>.mscz demo/<slug>`. The page links to them as `#/demo` and `#/demo/ave-verum-corpus`.
 - `media/soundfont/`: one soundfont file per General MIDI program, `<program>.sf3`, for every program that a piece plays or that the instrument menu offers, cut from MuseScore's MS Basic soundfont, with its license. It is checked in, and is shared by all seasons.
@@ -48,7 +48,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
    - a note without a lyric after a rest;
    - syllable tags that don't chain, such as a word that begins but never ends, which often means a lyric is missing;
    - a lyric on a verse line other than 1.
-2. **Register the piece.** Add an entry to `media/<season>/pieces.json`, a JSON array:
+2. **Register the piece.** Add an entry to the `pieces` array of `media/<season>/pieces.json`:
    ```json
    { "slug": "my-slug", "label": "Menu label", "hues": [["", 215], ["Word", 30]] }
    ```

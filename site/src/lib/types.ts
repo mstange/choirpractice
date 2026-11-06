@@ -54,6 +54,13 @@ export interface PieceData {
 	engravings: Engraving[];
 }
 
+/** A season's pieces.json. */
+export interface Season {
+	/** Shown on the start page, such as "Winter 2026". */
+	title: string;
+	pieces: PieceEntry[];
+}
+
 /** An entry of pieces.json. */
 export interface PieceEntry {
 	slug: string;

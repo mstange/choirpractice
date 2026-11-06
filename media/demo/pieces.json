@@ -1,21 +1,24 @@
-[
-  {
-    "slug": "frere-jacques",
-    "label": "Frère Jacques (round)",
-    "hues": [
-      ["", 200],
-      ["dor", 140],
-      ["Son", 30],
-      ["ding", 280]
-    ]
-  },
-  {
-    "slug": "ave-verum-corpus",
-    "label": "Ave verum corpus (Mozart)",
-    "hues": [
-      ["", 215],
-      ["Cu", 30],
-      ["es", 280]
-    ]
-  }
-]
+{
+  "title": "Demo",
+  "pieces": [
+    {
+      "slug": "frere-jacques",
+      "label": "Frère Jacques (round)",
+      "hues": [
+        ["", 200],
+        ["dor", 140],
+        ["Son", 30],
+        ["ding", 280]
+      ]
+    },
+    {
+      "slug": "ave-verum-corpus",
+      "label": "Ave verum corpus (Mozart)",
+      "hues": [
+        ["", 215],
+        ["Cu", 30],
+        ["es", 280]
+      ]
+    }
+  ]
+}

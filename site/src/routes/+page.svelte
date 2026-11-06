@@ -1,9 +1,28 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { loadSeason } from '#lib/pieces.ts';
+	import { saveOffline } from '#lib/offline.ts';
+	import { loadSeason, savedOffline } from '#lib/pieces.ts';
 
 	let { data } = $props();
+
+	// Saving for offline use needs the service worker, which needs a secure context.
+	const canSave = 'serviceWorker' in navigator;
+	let offline = $state(savedOffline());
+	/** Per season being saved, how far it got, or why it failed. */
+	let saving: Record<string, string> = $state({});
+
+	async function save(season: string) {
+		try {
+			await saveOffline(season, (done, total) => (saving[season] = `Saving… ${done} of ${total}`));
+			// Otherwise the browser may delete the files when it runs short of space.
+			await navigator.storage.persist();
+			delete saving[season];
+		} catch (e) {
+			saving[season] = `Couldn’t save it: ${(e as Error).message}`;
+		}
+		offline = savedOffline();
+	}
 
 	let link = $state('');
 	let problem = $state('');
@@ -50,6 +69,17 @@
 						</li>
 					{/each}
 				</ul>
+				{#if canSave}
+					<p class="offline">
+						{#if saving[season]}
+							{saving[season]}
+						{:else if offline.includes(season)}
+							Saved for offline use. <button onclick={() => save(season)}>Update</button>
+						{:else}
+							<button onclick={() => save(season)}>Save for offline use</button>
+						{/if}
+					</p>
+				{/if}
 			{:else}
 				<p>
 					The pieces of <a href={resolve('/[season]', { season })}>a season you opened before</a>
@@ -117,6 +147,10 @@
 	li {
 		margin: 0.3em 0;
 		font-size: 1.15em;
+	}
+
+	.offline {
+		color: #aaa;
 	}
 
 	form {

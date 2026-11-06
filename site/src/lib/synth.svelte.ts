@@ -8,6 +8,27 @@ import type { Part } from './types.ts';
 const LEAD = 0.05;
 /** The General MIDI program that can double the vocal parts. */
 const PIANO = 0;
+
+/**
+ * The program of each channel of the parts: vocal parts with one channel play `vocalProgram`,
+ * the others what the MIDI file gives them.
+ */
+const channelPrograms = (parts: Part[], midi: Map<number, number>, vocalProgram: number) =>
+	new Map(
+		parts.flatMap(({ vocal, channels }) =>
+			channels.map((ch) => [
+				ch,
+				vocal && channels.length === 1 ? vocalProgram : (midi.get(ch) ?? 0)
+			])
+		)
+	);
+
+/** The programs that a piece plays, including the piano that doubles its vocal parts. */
+export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProgram: number) {
+	const used = new Set(channelPrograms(parts, midi, vocalProgram).values());
+	if (parts.some((p) => p.vocal && p.channels.length)) used.add(PIANO);
+	return used;
+}
 /**
  * The velocity of the piano that doubles a note of this velocity: it follows the part's dynamics
  * in the range from 32 to 100, since a soft piano note is hard to hear beside a choir sound.
@@ -138,14 +159,8 @@ export class Synth {
 			}
 			this.#scored = true;
 			const loads = [];
-			for (const { channels } of this.#parts)
-				for (const ch of channels)
-					loads.push(
-						this.#setProgram(
-							ch,
-							this.#vocal.includes(ch) ? this.#vocalProgram : (programs.get(ch) ?? 0)
-						)
-					);
+			for (const [ch, program] of channelPrograms(this.#parts, programs, this.#vocalProgram))
+				loads.push(this.#setProgram(ch, program));
 			for (const ch of this.#pianos.values()) loads.push(this.#setProgram(ch, PIANO));
 			await Promise.all(loads);
 			this.#ready = true;

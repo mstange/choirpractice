@@ -1,10 +1,10 @@
+import { MEDIA_BASE, MEDIA_CACHE } from './media.ts';
 import type { Season } from './types.ts';
 
-/** Where the seasons' directories are: the media/ directory next to the page, unless configured. */
-const BASE = import.meta.env.VITE_MEDIA_BASE ?? 'media';
+export { MEDIA_CACHE };
 
 /** URL of a file in a season's directory (written by tools/build.sh, so not known statically). */
-export const mediaUrl = (season: string, file: string) => `${BASE}/${season}/${file}`;
+export const mediaUrl = (season: string, file: string) => `${MEDIA_BASE}/${season}/${file}`;
 
 /** A season's pieces.json, or undefined if there is no such season. */
 export async function loadSeason(
@@ -29,6 +29,21 @@ export function rememberSeason(season: string) {
 	localStorage.setItem('seasons', JSON.stringify(seasons));
 }
 
-export function forgetSeason(season: string) {
+/** Forgets a season, and deletes its files from the media cache. */
+export async function forgetSeason(season: string) {
 	localStorage.setItem('seasons', JSON.stringify(visitedSeasons().filter((s) => s !== season)));
+	setSavedOffline(season, false);
+	const cache = await caches.open(MEDIA_CACHE);
+	const prefix = new URL(mediaUrl(season, ''), document.baseURI).href;
+	for (const req of await cache.keys()) if (req.url.startsWith(prefix)) await cache.delete(req);
+}
+
+/** The seasons saved for offline use, kept in localStorage. */
+export function savedOffline(): string[] {
+	return JSON.parse(globalThis.localStorage?.getItem('offline') ?? '[]');
+}
+
+export function setSavedOffline(season: string, saved: boolean) {
+	const seasons = savedOffline().filter((s) => s !== season);
+	localStorage.setItem('offline', JSON.stringify(saved ? [...seasons, season] : seasons));
 }

@@ -8,6 +8,11 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	/** Safari's Audio Session API, not in TypeScript's DOM types yet. */
+	interface Navigator {
+		audioSession?: { type: 'auto' | 'playback' | 'play-and-record' | (string & {}) };
+	}
 }
 
 export {};

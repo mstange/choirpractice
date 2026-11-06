@@ -13,6 +13,7 @@ export class Mic {
 
 	async start() {
 		this.error = '';
+		if (navigator.audioSession) navigator.audioSession.type = 'play-and-record';
 		try {
 			// Noise suppression treats sustained tones as noise, and gain control has no effect on
 			// pitch. Echo cancellation keeps the playback out of the pitch when not using headphones.
@@ -21,6 +22,7 @@ export class Mic {
 			});
 		} catch (e) {
 			this.error = String((e as Error).message ?? e);
+			if (navigator.audioSession) navigator.audioSession.type = 'playback';
 			return;
 		}
 		// A context of its own: a MediaStream source must run at the stream's sample rate.
@@ -35,6 +37,7 @@ export class Mic {
 		this.#ctx?.close();
 		this.#stream = this.#ctx = this.#analyser = undefined;
 		this.active = false;
+		if (navigator.audioSession) navigator.audioSession.type = 'playback';
 	}
 
 	/** How far the middle of the analysed window lags behind the input, in seconds. */

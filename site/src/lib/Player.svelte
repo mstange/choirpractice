@@ -12,6 +12,7 @@
 		type MicTrace
 	} from './canvas.ts';
 	import { assignColors } from './colors.ts';
+	import { install } from './install.svelte.ts';
 	import { INSTRUMENTS } from './instruments.ts';
 	import Lyrics from './Lyrics.svelte';
 	import { mediaUrl } from './pieces.ts';
@@ -222,6 +223,32 @@
 		return () => {
 			cancelAnimationFrame(raf);
 			synth.close();
+		};
+	});
+
+	// Keeps the screen on while playing, so that a phone on the music stand doesn't lock mid-piece.
+	$effect(() => {
+		if (!synth.playing || !navigator.wakeLock) return;
+		let lock: WakeLockSentinel | undefined,
+			done = false;
+		const request = () => {
+			if (document.visibilityState !== 'visible') return;
+			// The browser may refuse, such as on low battery; then the screen locks as usual.
+			navigator.wakeLock.request('screen').then(
+				(l) => {
+					if (done) l.release();
+					else lock = l;
+				},
+				() => {}
+			);
+		};
+		request();
+		// Hiding the page releases the lock.
+		document.addEventListener('visibilitychange', request);
+		return () => {
+			done = true;
+			lock?.release();
+			document.removeEventListener('visibilitychange', request);
 		};
 	});
 
@@ -583,17 +610,44 @@
 <svelte:head><title>{piece.title}</title></svelte:head>
 
 <div class="player" style:--bg-hue={hue}>
+	{#if !install.standalone && !install.dismissed && install.touch && season !== 'demo'}
+		<div class="install">
+			<span>
+				To find this music again later,
+				{#if install.prompt}
+					install it as an app.
+				{:else if install.safari}
+					add it to your Home Screen: tap Share, then “Add to Home Screen”.
+				{:else}
+					add this page to your home screen from the browser’s menu.
+				{/if}
+			</span>
+			{#if install.prompt}
+				<button onclick={() => install.prompt?.prompt()}>Install</button>
+			{/if}
+			<button class="icon" aria-label="Dismiss" onclick={() => install.dismiss()}>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+			</button>
+		</div>
+	{/if}
 	<header>
-		<select
-			class="piece"
-			aria-label="Piece"
-			value={entry.slug}
-			onchange={(e) => show(e.currentTarget.value, view)}
-		>
-			{#each pieces as p (p.slug)}
-				<option value={p.slug}>{p.label}</option>
-			{/each}
-		</select>
+		<nav class="pieces">
+			<a class="home" href={resolve('/')} title="All seasons" aria-label="All seasons">
+				<svg viewBox="0 0 16 16" aria-hidden="true"
+					><path d="M8 2 1.5 7.5H3.5V14h3.5v-4h2v4h3.5V7.5h2z" /></svg
+				>
+			</a>
+			<select
+				class="piece"
+				aria-label="Piece"
+				value={entry.slug}
+				onchange={(e) => show(e.currentTarget.value, view)}
+			>
+				{#each pieces as p (p.slug)}
+					<option value={p.slug}>{p.label}</option>
+				{/each}
+			</select>
+		</nav>
 		<div class="title">
 			<h1>{piece.title}</h1>
 			<div class="credits">
@@ -964,9 +1018,49 @@
 		gap: 12px;
 		padding: 14px 4vw 0;
 	}
-	.piece {
+	.pieces {
 		justify-self: start;
 		max-width: 100%;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.home {
+		flex: none;
+		width: 30px;
+		height: 30px;
+		display: grid;
+		place-items: center;
+		color: inherit;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 50%;
+	}
+	.home svg {
+		width: 14px;
+		height: 14px;
+		fill: currentColor;
+	}
+	.install {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 4vw;
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+	}
+	.install span {
+		flex: 1;
+	}
+	.install .icon svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+	}
+	.piece {
+		min-width: 0;
 		font: inherit;
 		color: inherit;
 		background: var(--surface);
@@ -1417,7 +1511,7 @@
 			grid-template-areas: 'piece views' 'title title';
 			row-gap: 6px;
 		}
-		.piece {
+		.pieces {
 			grid-area: piece;
 		}
 		.views {

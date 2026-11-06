@@ -54,7 +54,12 @@ export class Synth {
 	error = $state('');
 	readonly duration: number;
 
-	#ctx = new AudioContext({ latencyHint: 'playback' });
+	#ctx = (() => {
+		// On iOS, the music then plays even with the ringer switched to silent. While the mic is on,
+		// the session is play-and-record instead (see mic.svelte.ts).
+		if (navigator.audioSession?.type === 'auto') navigator.audioSession.type = 'playback';
+		return new AudioContext({ latencyHint: 'playback' });
+	})();
 	#node: AudioWorkletNode | undefined;
 	/** Messages for the audio thread from before it was there. */
 	#queue: [Message, Transferable[]][] = [];

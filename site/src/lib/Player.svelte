@@ -93,7 +93,6 @@
 	$effect(() => {
 		const saved: Saved = {
 			selected: session.selected,
-			emphasis: session.emphasis,
 			extraPiano: session.extraPiano,
 			levels: accompLevels,
 			speed

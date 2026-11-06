@@ -3,8 +3,6 @@ import { Mic } from './mic.svelte.ts';
 /** What carries over from one piece to the next, and what each piece keeps across visits. */
 export class Session {
 	readonly mic = new Mic();
-	/** How much quieter the other parts are, normally and while "Just me" is held, from 0 to 1. */
-	emphasis: [number, number] = $state([0.2, 0.95]);
 	/** Whether a piano doubles the selected parts, so that their notes' starts are easier to hear. */
 	extraPiano = $state(true);
 	/** The selected parts, and all vocal parts of the piece they were selected in. */
@@ -15,6 +13,21 @@ export class Session {
 	#barSeconds = $state(Number(globalThis.localStorage?.getItem('barSeconds') ?? 10));
 	// Choir Aahs.
 	#vocalProgram = $state(Number(globalThis.localStorage?.getItem('vocalProgram') ?? 52));
+	#emphasis: [number, number] = $state(
+		JSON.parse(globalThis.localStorage?.getItem('emphasis') ?? '[0.2, 0.95]')
+	);
+
+	/**
+	 * How much quieter the other parts are, normally and while "Just me" is on, from 0 to 1. Kept
+	 * across visits.
+	 */
+	get emphasis() {
+		return this.#emphasis;
+	}
+	set emphasis(value: [number, number]) {
+		this.#emphasis = value;
+		localStorage.setItem('emphasis', JSON.stringify(value));
+	}
 
 	/**
 	 * Seconds by which the singing reaches the pitch detection late, beyond what the page knows
@@ -48,9 +61,9 @@ export class Session {
 	}
 
 	/**
-	 * Starts the piece saved under `key`, with these vocal parts: restores the selection and the
-	 * emphasis and extra piano saved for it, or else carries them over from the previous piece. Returns what else
-	 * was saved for it.
+	 * Starts the piece saved under `key`, with these vocal parts: restores the selection and extra
+	 * piano saved for it, or else carries them over from the previous piece. Returns what else was
+	 * saved for it.
 	 */
 	enter(key: string, voices: string[]): Partial<Saved> {
 		const saved: Saved | null = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null');
@@ -63,10 +76,6 @@ export class Session {
 				: voices.filter((v) => this.selected.some((s) => equivalent(s, voices) === v));
 		this.selected = matched.length ? matched : [voices[0]];
 		this.#voices = voices;
-		// Before "Just me", a piece kept only the normal emphasis.
-		const emphasis = saved?.emphasis ?? this.emphasis;
-		this.emphasis =
-			typeof emphasis === 'number' ? [emphasis, Math.max(emphasis, this.emphasis[1])] : emphasis;
 		this.extraPiano = saved?.extraPiano ?? this.extraPiano;
 		return saved ?? {};
 	}
@@ -75,7 +84,6 @@ export class Session {
 /** What is kept per piece across visits: also the accompaniment levels and the speed. */
 export type Saved = {
 	selected: string[];
-	emphasis: [number, number] | number;
 	extraPiano: boolean;
 	levels: Record<string, number>;
 	speed: number;

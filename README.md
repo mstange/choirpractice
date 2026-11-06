@@ -88,7 +88,8 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
 - **Soundfont:** `media/soundfont` is uploaded under the name `soundfont`, for all seasons.
 - **Upload** a season with [rclone](https://rclone.org/) configured for R2. Uploads replace files under the same names, so every file is revalidated on each request:
   ```sh
-  rclone sync media/<season> r2:choirpractice-media/$(cat media/<season>.key) --header-upload "Cache-Control: no-cache"
+  season=<season>
+  rclone sync media/$season r2:choirpractice-media/$(cat media/$season.key) --header-upload "Cache-Control: no-cache"
   rclone sync media/demo r2:choirpractice-media/demo --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
   rclone sync media/soundfont r2:choirpractice-media/soundfont --header-upload "Cache-Control: no-cache"
   ```

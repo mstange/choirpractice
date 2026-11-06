@@ -8,6 +8,11 @@ import type { Part } from './types.ts';
 const LEAD = 0.05;
 /** The General MIDI program that can double the vocal parts. */
 const PIANO = 0;
+/**
+ * The velocity of the piano that doubles a note of this velocity: it follows the part's dynamics
+ * in the upper half of the range, since a soft piano note is hard to hear beside a choir sound.
+ */
+const pianoVelocity = (vel: number) => (vel ? Math.round(64 + vel / 2) : 0);
 
 /**
  * Plays a piece's score.mid with soundfont instruments, each part on its MIDI channels.
@@ -108,18 +113,22 @@ export class Synth {
 					this.#pianos.has(p.name) ? p.channels.map((ch) => [ch, this.#pianos.get(p.name)!]) : []
 				)
 			);
-			// The piano gets the part's notes, and its volume, pan and expression, so that it sits
-			// at the level of the part it doubles.
+			// The piano gets the part's notes, at pianoVelocity(), and its volume, pan and expression,
+			// so that it sits at the level of the part it doubles.
 			const doubled = events.flatMap((e) => {
 				const type = e.data[0] & 0xf0,
 					ch = piano.get(e.data[0] & 0x0f);
 				const copied =
 					type === 0x80 || type === 0x90 || (type === 0xb0 && [7, 10, 11].includes(e.data[1]));
 				if (ch === undefined || !copied) return [e];
-				return [e, { t: e.t, data: [type, ...e.data.slice(1)], offset: ch }];
+				const data =
+					type === 0x90 ? [type, e.data[1], pianoVelocity(e.data[2])] : [type, ...e.data.slice(1)];
+				return [e, { t: e.t, data, offset: ch }];
 			});
 			notes.push(
-				...notes.filter((n) => piano.has(n.ch)).map((n) => ({ ...n, ch: piano.get(n.ch)! }))
+				...notes
+					.filter((n) => piano.has(n.ch))
+					.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
 			);
 			this.#post({ type: 'score', events: doubled, notes });
 			for (const n of notes) {

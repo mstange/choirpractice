@@ -4,7 +4,15 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="robots" content="noindex" />
-		<title>Lyrics</title>
+		<title>Choir player</title>
+		<!-- No start_url in the manifest: an installed app starts at the page it was installed from,
+		     whose URL has the season's key. -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link rel="icon" href="%sveltekit.assets%/icon.svg" type="image/svg+xml" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<meta name="theme-color" content="#111111" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-title" content="Choir" />
 		%sveltekit.head%
 	</head>
 	<body>

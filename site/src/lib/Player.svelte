@@ -118,6 +118,18 @@
 	$effect(() => {
 		if (session.selected.length === voiceNames.length) justMe = false;
 	});
+	// While one of the Emphasis thumbs is dragged, the mix takes its emphasis, so that it can be heard.
+	let emphasisPreview: 0 | 1 | null = $state(null);
+	function previewEmphasis(which: 0 | 1) {
+		emphasisPreview = which;
+		const end = () => {
+			emphasisPreview = null;
+			removeEventListener('pointerup', end);
+			removeEventListener('pointercancel', end);
+		};
+		addEventListener('pointerup', end);
+		addEventListener('pointercancel', end);
+	}
 	let barsCanvas: HTMLCanvasElement | undefined = $state();
 	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
@@ -165,7 +177,7 @@
 	$effect(() => {
 		// Emphasis makes the selected parts louder, the other vocal parts quieter and the
 		// accompaniment quieter still, silent at full emphasis.
-		const emphasis = session.emphasis[justMe ? 1 : 0];
+		const emphasis = session.emphasis[emphasisPreview ?? (justMe ? 1 : 0)];
 		const selected = 1 + SELECTED_BOOST * emphasis;
 		for (const { name, vocal } of parts) {
 			const isSelected = session.selected.includes(name);
@@ -844,6 +856,7 @@
 						max="1"
 						step="0.01"
 						value={session.emphasis[0]}
+						onpointerdown={() => previewEmphasis(0)}
 						oninput={(e) => {
 							const high = session.emphasis[1];
 							// The input moves on past the other thumb unless held back here.
@@ -858,6 +871,7 @@
 						max="1"
 						step="0.01"
 						value={session.emphasis[1]}
+						onpointerdown={() => previewEmphasis(1)}
 						oninput={(e) => {
 							const low = session.emphasis[0];
 							e.currentTarget.value = String(Math.max(+e.currentTarget.value, low));

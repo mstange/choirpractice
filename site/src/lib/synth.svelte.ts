@@ -108,10 +108,14 @@ export class Synth {
 					this.#pianos.has(p.name) ? p.channels.map((ch) => [ch, this.#pianos.get(p.name)!]) : []
 				)
 			);
+			// The piano gets the part's notes, and its volume, pan and expression, so that it sits
+			// at the level of the part it doubles.
 			const doubled = events.flatMap((e) => {
 				const type = e.data[0] & 0xf0,
 					ch = piano.get(e.data[0] & 0x0f);
-				if (ch === undefined || (type !== 0x80 && type !== 0x90)) return [e];
+				const copied =
+					type === 0x80 || type === 0x90 || (type === 0xb0 && [7, 10, 11].includes(e.data[1]));
+				if (ch === undefined || !copied) return [e];
 				return [e, { t: e.t, data: [type, ...e.data.slice(1)], offset: ch }];
 			});
 			notes.push(

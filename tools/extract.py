@@ -16,6 +16,24 @@ from pathlib import Path
 
 STEPS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 PLACEHOLDERS = {"Untitled score", "Composer / arranger", "Subtitle", "Lyricist"}
+SMALL_WORDS = set("a an and as at but by for in nor of on or the to with".split())
+
+
+def title_case(text):
+    """Title frames are often set in capitals, which the page shouldn't shout; text in
+    mixed case is left as written. Roman numerals stay in capitals."""
+    if not text.isupper():
+        return text
+
+    def word(m):
+        w = m[0]
+        if re.fullmatch(r"X{0,3}(IX|IV|V?I{0,3})", w):
+            return w
+        if m.start() > 0 and w.lower() in SMALL_WORDS:
+            return w.lower()
+        return w[0] + w[1:].lower()
+
+    return re.sub(r"[^\W\d_][\w']*", word, text)
 
 
 def varlen(data, p):
@@ -179,7 +197,7 @@ def credits(root, mscx):
     ):
         words = html.unescape(re.sub(r"<[^>]*>", "", text)).strip()
         if words and words not in PLACEHOLDERS:
-            found.setdefault(style.lower(), words)
+            found.setdefault(style.lower(), title_case(words))
     for c in root.findall("identification/creator"):
         if c.text and c.text.strip() not in PLACEHOLDERS:
             found.setdefault(c.get("type"), c.text.strip())

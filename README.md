@@ -20,7 +20,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 - `media/soundfont/`: one soundfont file per General MIDI program, `<program>.sf3`, for every program that a piece plays or that the instrument menu offers, cut from MuseScore's MS Basic soundfont, with its license. It is checked in, and is shared by all seasons.
 - `tools/build.sh <score.mscz> <season>/<slug>`: the whole pipeline for one score. It writes `media/<season>/<slug>/piece.json`, `media/<season>/<slug>/score.mid`, MuseScore's MIDI export, which the page plays, and `media/<season>/<slug>/engraving/<name>.svg`, the sheet music. Then it runs `site/scripts/soundfont.ts`.
 - `tools/extract.py`: reads MuseScore's MusicXML and MIDI exports and writes `piece.json`, which holds:
-  - title, subtitle, credits, from the score's title frame (the MusicXML export leaves it out), or else from its metadata in File › Properties;
+  - title, subtitle, credits, from the score's title frame (the MusicXML export leaves it out), with text set in capitals put in title case, or else from its metadata in File › Properties;
   - measure start times;
   - the parts with their MIDI channels;
   - for each vocal part, its syllables and notes.

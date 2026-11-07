@@ -337,8 +337,9 @@ export function drawSheet(
 	g.globalAlpha = 1;
 }
 
-// The overview is static apart from the playhead and the loop, so it is drawn once per size.
-const timelineCache = new WeakMap<HTMLCanvasElement, { key: string; base: OffscreenCanvas }>();
+// The overview is static apart from the playhead and the loop, so it is drawn once per size, into
+// an ImageBitmap (see Sheet's tiles).
+const timelineCache = new WeakMap<HTMLCanvasElement, { key: string; base: ImageBitmap }>();
 
 export function drawTimeline(
 	c: HTMLCanvasElement,
@@ -367,7 +368,8 @@ export function drawTimeline(
 			for (const s of v.syllables)
 				b.fillRect(x(s.t0), laneH * (vi + 0.5), Math.max(0.5, x(s.t1) - x(s.t0) - 1), laneH * 0.7);
 		});
-		cached = { key, base };
+		cached?.base.close();
+		cached = { key, base: base.transferToImageBitmap() };
 		timelineCache.set(c, cached);
 	}
 	g.drawImage(cached.base, 0, 0, W, H);

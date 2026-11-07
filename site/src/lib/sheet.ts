@@ -24,7 +24,7 @@ export class Sheet {
 	#ready = false;
 	#scale = 0;
 	#cssScale = 1;
-	#tiles = new Map<number, OffscreenCanvas>();
+	#tiles = new Map<number, ImageBitmap>();
 	/** The engraving x at the strip's left edge, in CSS pixels, as currently drawn. */
 	#shown = 0;
 	#drawnAt = 0;
@@ -79,7 +79,10 @@ export class Sheet {
 		const dpr = devicePixelRatio,
 			scale = H / this.info.height,
 			ds = scale * dpr;
-		if (ds !== this.#scale) [this.#scale, this.#cssScale, this.#tiles] = [ds, scale, new Map()];
+		if (ds !== this.#scale) {
+			for (const tile of this.#tiles.values()) tile.close();
+			[this.#scale, this.#cssScale, this.#tiles] = [ds, scale, new Map()];
+		}
 
 		const cursor = this.xAt(s) * scale;
 		const page = Math.max(0, Math.floor((cursor - LEAD * W) / (PAGE * W)));
@@ -96,7 +99,11 @@ export class Sheet {
 		const left = -Math.round(this.#shown * dpr) / dpr;
 		const k0 = Math.max(0, Math.floor((-left * dpr) / TILE)),
 			k1 = Math.min(Math.ceil((this.info.width * ds) / TILE), Math.ceil(((W - left) * dpr) / TILE));
-		for (const k of this.#tiles.keys()) if (k < k0 || k >= k1) this.#tiles.delete(k);
+		for (const [k, tile] of this.#tiles)
+			if (k < k0 || k >= k1) {
+				tile.close();
+				this.#tiles.delete(k);
+			}
 		for (let k = k0; k < k1; k++) {
 			const tile = this.#tile(k);
 			g.drawImage(tile, left + (k * TILE) / dpr, 0, tile.width / dpr, tile.height / dpr);
@@ -105,13 +112,15 @@ export class Sheet {
 		g.fillRect(left + cursor - 1, 0, 2, H);
 	}
 
-	#tile(k: number): OffscreenCanvas {
+	// An ImageBitmap rather than the OffscreenCanvas itself: Firefox's remote canvas sends a canvas
+	// source's pixels to the GPU process on every drawImage, but an ImageBitmap's only once.
+	#tile(k: number): ImageBitmap {
 		let tile = this.#tiles.get(k);
 		if (!tile) {
 			const ds = this.#scale,
 				units = TILE / ds;
-			tile = new OffscreenCanvas(TILE, Math.ceil(this.info.height * ds));
-			const g = tile.getContext('2d')!;
+			const c = new OffscreenCanvas(TILE, Math.ceil(this.info.height * ds));
+			const g = c.getContext('2d')!;
 			g.drawImage(
 				this.#img!,
 				k * units,
@@ -125,7 +134,8 @@ export class Sheet {
 			);
 			g.globalCompositeOperation = 'source-in';
 			g.fillStyle = '#fff';
-			g.fillRect(0, 0, tile.width, tile.height);
+			g.fillRect(0, 0, c.width, c.height);
+			tile = c.transferToImageBitmap();
 			this.#tiles.set(k, tile);
 		}
 		return tile;

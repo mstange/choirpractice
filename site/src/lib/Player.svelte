@@ -1143,6 +1143,9 @@
 	button:hover {
 		background: rgb(255 255 255 / 0.14);
 	}
+	button:active {
+		background: rgb(255 255 255 / 0.22);
+	}
 
 	/* What is played: transport, speed, who sings, and the mix. */
 	.transport {

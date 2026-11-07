@@ -27,7 +27,7 @@ assert (src / "score_style.mss").exists(), "no score_style.mss: MuseScore 3 file
 style = (src / "score_style.mss").read_text()
 part_xml = re.findall(r"<Part[ >].*?</Part>", mscx, re.S)
 assert len(part_xml) == len(piece["parts"]), "part count differs between .mscx and MusicXML"
-to_sec = time_map(mid_path)
+to_sec = time_map(mid_path, ET.parse(xml_path).getroot(), mscx)
 onsets = [
     {to_sec(q) for q in parse_part(part)[2]}
     for part in ET.parse(xml_path).getroot().findall("part")

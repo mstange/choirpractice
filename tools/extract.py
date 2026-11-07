@@ -6,10 +6,12 @@ Both input files must be exported by MuseScore from the same score; src_dir hold
 unpacked .mscz, whose title frame gives the title and credits. Timing comes from the
 MIDI file, which is what the page plays, so the tempo map (fermatas, ritardandos, ...)
 matches the music. Score positions are assumed to map 1:1 to MIDI ticks, i.e. the score
-has no repeats. Each part gets the MIDI channels it plays on.
+has no repeats, except at pauses (after a breath mark or caesura, or at a section break),
+for which MuseScore's MIDI export inserts a bar of ticks (see time_map). Each part gets the
+MIDI channels it plays on.
 """
 
-import html, json, re, struct, sys
+import bisect, html, json, re, struct, sys
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
@@ -47,12 +49,13 @@ def varlen(data, p):
 
 
 def read_midi(path):
-    """Returns (division, [(tick, seconds, seconds_per_tick)], tracks), where tracks holds the set
-    of channels that each track plays notes on."""
+    """Returns (division, [(tick, seconds, seconds_per_tick)], tracks, note_ticks), where tracks
+    holds the set of channels that each track plays notes on, and note_ticks the sorted ticks of
+    all note-ons."""
     data = open(path, "rb").read()
     assert data[:4] == b"MThd"
     _, _, ntracks, division = struct.unpack(">IHHH", data[4:14])
-    pos, tempos, tracks = 14, [], []
+    pos, tempos, tracks, note_ticks = 14, [], [], []
     for _ in range(ntracks):
         assert data[pos : pos + 4] == b"MTrk"
         (length,) = struct.unpack(">I", data[pos + 4 : pos + 8])
@@ -76,6 +79,7 @@ def read_midi(path):
             else:
                 if status & 0xF0 == 0x90 and data[p + 1] > 0:
                     tracks[-1].add(status & 0x0F)
+                    note_ticks.append(tick)
                 p += 1 if (status & 0xF0) in (0xC0, 0xD0) else 2
         pos = end
     segs, sec, last_tick, spt = [(0, 0.0, 0.5 / division)], 0.0, 0, 0.5 / division
@@ -83,17 +87,78 @@ def read_midi(path):
         sec += (tick - last_tick) * spt
         last_tick, spt = tick, uspq / 1e6 / division
         segs.append((tick, sec, spt))
-    return division, segs, tracks
+    return division, segs, tracks, sorted(note_ticks)
 
 
-def time_map(mid_path):
-    """Returns a function mapping score positions in quarter notes to seconds."""
-    division, segs, _ = read_midi(mid_path)
+def pause_places(root):
+    """Where MuseScore may pause, as {position in quarter notes: quarter notes in a bar there}:
+    after a note with a breath mark or caesura, and at every barline (a section break). The bar
+    is a full bar of the time signature, which is how many ticks a pause adds to the MIDI."""
+    places = {}
+    for part in root.findall("part"):
+        mstart, divisions, bar = Fraction(0), 1, Fraction(4)
+        for measure in part.findall("measure"):
+            pos = mlen = Fraction(0)
+            for el in measure:
+                if el.tag == "attributes":
+                    divisions = int(el.findtext("divisions") or divisions)
+                    if (t := el.find("time")) is not None:
+                        beats = sum(int(b) for b in t.findtext("beats").split("+"))
+                        bar = Fraction(4 * beats, int(t.findtext("beat-type")))
+                    if pos == 0:
+                        places[mstart] = bar
+                elif el.tag == "backup":
+                    pos -= Fraction(int(el.findtext("duration")), divisions)
+                elif el.tag == "forward":
+                    pos += Fraction(int(el.findtext("duration")), divisions)
+                elif el.tag == "note" and el.find("grace") is None:
+                    if el.find("chord") is None:
+                        pos += Fraction(int(el.findtext("duration")), divisions)
+                    if el.find("notations/articulations/breath-mark") is not None or (
+                        el.find("notations/articulations/caesura") is not None
+                    ):
+                        places[mstart + pos] = bar
+                mlen = max(mlen, pos)
+            places.setdefault(mstart, bar)
+            mstart += mlen
+        places.setdefault(mstart, bar)
+    return places
+
+
+def time_map(mid_path, root, mscx):
+    """Returns a function mapping score positions in quarter notes to seconds.
+
+    MuseScore's MIDI export makes a pause a bar of extra ticks at its position (PauseMap in
+    MuseScore's src/engraving/compat/midi/pausemap.cpp): a tempo change there that makes the bar
+    last the pause, and one back at its end, with no note starting in between. A pause is found
+    where pause_places() allows one, the MIDI has that pattern, and the bar lasts one of the
+    pauses in the .mscx (a fermata over a bar's rest makes the same tempo changes)."""
+    division, segs, _, note_ticks = read_midi(mid_path)
+    pauses = {float(p) for p in re.findall(r"<pause>([^<]+)</pause>", mscx)} - {0.0}
+    tempo_ticks = sorted({seg[0] for seg in segs[1:]})
+
+    def seconds(tick):
+        t, s, spt = next(seg for seg in reversed(segs) if tick >= seg[0])
+        return s + (tick - t) * spt
+
+    inserted, shift = [], 0  # [(position, extra ticks)]
+    for q, bar in sorted(pause_places(root).items()) if pauses else ():
+        t, length = q * division + shift, bar * division
+        if t.denominator != 1 or length.denominator != 1:
+            continue
+        t, length = int(t), int(length)
+        i = bisect.bisect_left(tempo_ticks, t)
+        if tempo_ticks[i : i + 2] != [t, t + length]:
+            continue
+        if bisect.bisect_left(note_ticks, t) != bisect.bisect_left(note_ticks, t + length):
+            continue
+        if any(abs(seconds(t + length) - seconds(t) - p) < 0.002 for p in pauses):
+            inserted.append((q, length))
+            shift += length
 
     def to_sec(quarters):
-        tick = float(quarters) * division
-        t, s, spt = next(seg for seg in reversed(segs) if tick >= seg[0])
-        return round(s + (tick - t) * spt, 4)
+        tick = float(quarters) * division + sum(n for q, n in inserted if q <= quarters)
+        return round(seconds(tick), 4)
 
     return to_sec
 
@@ -213,9 +278,10 @@ def credits(root, mscx):
 
 def main():
     xml_path, mid_path, src, out = sys.argv[1:5]
-    to_sec = time_map(mid_path)
     root = ET.parse(xml_path).getroot()
-    title, subtitle, by = credits(root, next(Path(src).glob("*.mscx")).read_text())
+    mscx = next(Path(src).glob("*.mscx")).read_text()
+    to_sec = time_map(mid_path, root, mscx)
+    title, subtitle, by = credits(root, mscx)
     names = {sp.get("id"): sp.findtext("part-name") for sp in root.findall("part-list/score-part")}
     channels = part_channels(root, mid_path)
     result = {"title": title, "subtitle": subtitle, "credits": by, "parts": [], "voices": []}

@@ -2,15 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import {
-		NOW_X,
-		drawBars,
-		drawRuler,
-		drawSheet,
-		drawTimeline,
-		type Loop,
-		type MicTrace
-	} from './canvas.ts';
+	import { BarsView, type MicTrace } from './bars.ts';
+	import { NOW_X, drawRuler, drawSheet, drawTimeline, type Loop } from './canvas.ts';
 	import { assignColors } from './colors.ts';
 	import { install } from './install.svelte.ts';
 	import { INSTRUMENTS } from './instruments.ts';
@@ -132,7 +125,7 @@
 	}
 	// Whether the mix has the Just me emphasis, which the Just me button shows.
 	const justMeHeard = $derived(emphasisPreview === null ? justMe : emphasisPreview === 1);
-	let barsCanvas: HTMLCanvasElement | undefined = $state();
+	let bars: BarsView | undefined;
 	let rulerCanvas: HTMLCanvasElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
 	const partButtons: Record<string, HTMLButtonElement> = {};
@@ -201,17 +194,8 @@
 			t = synth.now();
 			if (synth.playing && !synth.held && t >= synth.duration) synth.pause();
 			if (mic.active) recordMic();
-			if (view !== 'lyrics' && barsCanvas && rulerCanvas) {
-				drawBars(
-					barsCanvas,
-					piece,
-					colors,
-					t,
-					session.barSeconds,
-					selectedSet,
-					mic.active ? micTrace : null,
-					loop
-				);
+			if (view !== 'lyrics' && bars && rulerCanvas) {
+				bars.draw(t, session.barSeconds, selectedSet, mic.active ? micTrace : null, loop);
 				drawRuler(rulerCanvas, measures, t, session.barSeconds, loop);
 			}
 			if (sheet && sheetCanvas)
@@ -666,12 +650,15 @@
 		{#if view === 'lyrics'}
 			<Lyrics {voices} {colors} selected={selectedSet} {t} onseek={seek} />
 		{:else}
-			<canvas
+			<div
 				class="bars"
 				title="Drag to scroll, click to seek"
-				bind:this={barsCanvas}
+				{@attach (el) => {
+					bars = new BarsView(el, piece, colors);
+					return () => (bars = undefined);
+				}}
 				{@attach scrubBars}
-			></canvas>
+			></div>
 			<canvas
 				class="ruler"
 				title="Drag to set a loop, click it to turn looping on or off"
@@ -1097,6 +1084,7 @@
 	.bars {
 		position: absolute;
 		inset: 0;
+		overflow: hidden;
 		width: 100%;
 		height: 100%;
 		cursor: grab;

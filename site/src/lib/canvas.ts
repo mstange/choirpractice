@@ -25,9 +25,6 @@ export function unchanged(c: HTMLCanvasElement, key: string) {
 	return false;
 }
 
-const loopKey = (loop: Loop | null) =>
-	loop ? `${loop.from}-${loop.to}${loop.on ? '' : 'off'}` : '';
-
 /** Sizes the canvas backing store to its CSS size and returns a context in CSS pixels. */
 export function prepare(c: HTMLCanvasElement) {
 	const dpr = devicePixelRatio,
@@ -42,54 +39,6 @@ export function prepare(c: HTMLCanvasElement) {
 	g.setTransform(dpr, 0, 0, dpr, 0, 0);
 	g.clearRect(0, 0, W, H);
 	return { g, W, H };
-}
-
-/**
- * Horizontal layout of the bar view and its ruler, with time `t` on the "now" line and `seconds`
- * of music across the width.
- */
-function timeAxis(W: number, t: number, seconds: number) {
-	const nowX = W * NOW_X,
-		pps = W / seconds;
-	return {
-		nowX,
-		X: (s: number) => nowX + (s - t) * pps,
-		tMin: t - nowX / pps,
-		tMax: t + (W - nowX) / pps
-	};
-}
-
-/** The ruler above the bar view: measure numbers and the loop. */
-export function drawRuler(
-	c: HTMLCanvasElement,
-	measures: number[],
-	t: number,
-	seconds: number,
-	loop: Loop | null
-) {
-	if (unchanged(c, `${t} ${seconds} ${loopKey(loop)}`)) return;
-	const { g, W, H } = prepare(c);
-	const { nowX, X } = timeAxis(W, t, seconds);
-	g.fillStyle = 'rgb(255 255 255 / 0.05)';
-	g.fillRect(0, 0, W, H);
-	if (loop) {
-		const x0 = X(measures[loop.from]);
-		g.fillStyle = loop.on ? `rgb(${LOOP_RGB})` : 'rgb(255 255 255 / 0.22)';
-		g.beginPath();
-		g.roundRect(x0, 3, X(measures[loop.to]) - x0, H - 6, 4);
-		g.fill();
-	}
-	g.font = '12px system-ui, sans-serif';
-	g.textBaseline = 'middle';
-	for (let i = 0; i < measures.length - 1; i++) {
-		const x = X(measures[i]);
-		if (x < -40 || x > W) continue;
-		const looped = loop?.on && loop.from <= i && i < loop.to;
-		g.fillStyle = looped ? 'rgb(0 0 0 / 0.65)' : 'rgb(255 255 255 / 0.4)';
-		g.fillText(String(i + 1), x + 5, H / 2);
-	}
-	g.fillStyle = 'rgb(255 255 255 / 0.55)';
-	g.fillRect(nowX - 1, 0, 2, H);
 }
 
 export function drawSheet(

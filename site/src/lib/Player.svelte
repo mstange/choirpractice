@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { BarsView, type MicTrace } from './bars.ts';
-	import { NOW_X, drawRuler, drawSheet, drawTimeline, type Loop } from './canvas.ts';
+	import { NOW_X, drawSheet, drawTimeline, type Loop } from './canvas.ts';
 	import { assignColors } from './colors.ts';
 	import { install } from './install.svelte.ts';
 	import { INSTRUMENTS } from './instruments.ts';
@@ -126,7 +126,7 @@
 	// Whether the mix has the Just me emphasis, which the Just me button shows.
 	const justMeHeard = $derived(emphasisPreview === null ? justMe : emphasisPreview === 1);
 	let bars: BarsView | undefined;
-	let rulerCanvas: HTMLCanvasElement | undefined = $state();
+	let ruler: HTMLElement | undefined = $state();
 	let timelineCanvas: HTMLCanvasElement;
 	const partButtons: Record<string, HTMLButtonElement> = {};
 	const micTrace: MicTrace = { trail: [], now: null, shift: 0 };
@@ -194,9 +194,9 @@
 			t = synth.now();
 			if (synth.playing && !synth.held && t >= synth.duration) synth.pause();
 			if (mic.active) recordMic();
-			if (view !== 'lyrics' && bars && rulerCanvas) {
-				bars.draw(t, session.barSeconds, selectedSet, mic.active ? micTrace : null, loop);
-				drawRuler(rulerCanvas, measures, t, session.barSeconds, loop);
+			if (view !== 'lyrics' && bars && ruler) {
+				const trace = mic.active ? micTrace : null;
+				bars.draw(t, session.barSeconds, selectedSet, trace, loop, ruler.clientHeight);
 			}
 			if (sheet && sheetCanvas)
 				drawSheet(sheetCanvas, sheet, t, colors[session.selected[0]], sheetFrozen);
@@ -659,12 +659,13 @@
 				}}
 				{@attach scrubBars}
 			></div>
-			<canvas
+			<!-- The ruler is drawn by the Pitch view; this element takes its pointer events. -->
+			<div
 				class="ruler"
 				title="Drag to set a loop, click it to turn looping on or off"
-				bind:this={rulerCanvas}
+				bind:this={ruler}
 				{@attach loopRuler}
-			></canvas>
+			></div>
 		{/if}
 	</main>
 

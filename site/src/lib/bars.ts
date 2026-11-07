@@ -87,14 +87,7 @@ function layout(data: PieceData, selected: Set<string>, H: number): Layout {
 	return { H, axis, voices, font: selected.size > 1 ? 14 : 20 };
 }
 
-function roundRect(
-	g: Context2D,
-	x: number,
-	y: number,
-	w: number,
-	h: number,
-	outline = false
-) {
+function roundRect(g: Context2D, x: number, y: number, w: number, h: number, outline = false) {
 	g.beginPath();
 	g.roundRect(x, y, Math.max(w, h), h, h / 2);
 	if (outline) g.stroke();
@@ -280,6 +273,39 @@ function drawMic(
 	g.restore();
 }
 
+/** The ruler at the top of the view: measure numbers and the loop, `H` high. */
+function drawRuler(
+	g: CanvasRenderingContext2D,
+	measures: number[],
+	X: (s: number) => number,
+	W: number,
+	H: number,
+	nowX: number,
+	loop: Loop | null
+) {
+	g.fillStyle = 'rgb(255 255 255 / 0.05)';
+	g.fillRect(0, 0, W, H);
+	if (loop) {
+		const x0 = X(measures[loop.from]);
+		g.fillStyle = loop.on ? `rgb(${LOOP_RGB})` : 'rgb(255 255 255 / 0.22)';
+		g.beginPath();
+		g.roundRect(x0, 3, X(measures[loop.to]) - x0, H - 6, 4);
+		g.fill();
+	}
+	g.font = '12px system-ui, sans-serif';
+	g.textBaseline = 'middle';
+	for (let i = 0; i < measures.length - 1; i++) {
+		const x = X(measures[i]);
+		if (x < -40 || x > W) continue;
+		const looped = loop?.on && loop.from <= i && i < loop.to;
+		g.fillStyle = looped ? 'rgb(0 0 0 / 0.65)' : 'rgb(255 255 255 / 0.4)';
+		g.fillText(String(i + 1), x + 5, H / 2);
+	}
+	g.textBaseline = 'alphabetic';
+	g.fillStyle = 'rgb(255 255 255 / 0.55)';
+	g.fillRect(nowX - 1, 0, 2, H);
+}
+
 function canvasIn(parent: HTMLElement) {
 	const c = document.createElement('canvas');
 	c.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none';
@@ -295,7 +321,8 @@ function canvasIn(parent: HTMLElement) {
  * frame draws the tiles at device pixel positions, on each side of the line the version for that
  * side, and then what changes with time. Only canvases change from frame to frame, which Firefox
  * paints without building a display list, and the tiles' pixels go to the GPU once. The pitch grid,
- * which doesn't scroll, has a canvas of its own below.
+ * which doesn't scroll, has a canvas of its own below. The ruler is drawn on top, `rulerH` high, so
+ * that it needs no canvas of its own.
  *
  * Tiles hold one scale. While the scale changes, for zooming or resizing, the view is drawn
  * without them, and they are drawn once it has settled for SETTLE ms.
@@ -320,7 +347,14 @@ export class BarsView {
 		this.#canvas = canvasIn(el);
 	}
 
-	draw(t: number, seconds: number, selected: Set<string>, mic: MicTrace | null, loop: Loop | null) {
+	draw(
+		t: number,
+		seconds: number,
+		selected: Set<string>,
+		mic: MicTrace | null,
+		loop: Loop | null,
+		rulerH: number
+	) {
 		const W = this.#el.clientWidth,
 			H = this.#el.clientHeight,
 			dpr = devicePixelRatio;
@@ -368,8 +402,9 @@ export class BarsView {
 
 		const last = mic?.trail[mic.trail.length - 1];
 		const micKey = mic ? `${mic.trail.length},${last?.t},${mic.now},${mic.shift}` : '';
-		const loopKey = loop?.on ? `${loop.from}-${loop.to}` : '';
-		if (unchanged(this.#canvas, `${tiled} ${key} ${offset} ${t} ${micKey} ${loopKey}`)) return;
+		const loopKey = loop ? `${loop.from}-${loop.to}${loop.on ? '' : 'off'}` : '';
+		if (unchanged(this.#canvas, `${tiled} ${key} ${offset} ${t} ${micKey} ${loopKey} ${rulerH}`))
+			return;
 		const { g } = prepare(this.#canvas);
 		if (loop?.on) {
 			const x0 = X(this.#data.measures[loop.from]),
@@ -405,6 +440,7 @@ export class BarsView {
 			g.restore();
 		}
 		drawNow(g, this.#colors, L, X, t, nowX, mic);
+		drawRuler(g, this.#data.measures, X, W, rulerH, nowX, loop);
 	}
 
 	/** Draws tile `k`, which covers device pixels k * TILE to (k + 1) * TILE of the music. */

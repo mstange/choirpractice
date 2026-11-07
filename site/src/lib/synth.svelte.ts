@@ -9,6 +9,14 @@ const LEAD = 0.05;
 /** The General MIDI program that can double the vocal parts. */
 const PIANO = 0;
 
+type Anchor = {
+	time: number;
+	pos: number;
+	rate: number;
+	loop: [number, number] | null;
+	prev?: Anchor;
+};
+
 /**
  * The program of each channel of the parts: vocal parts with one channel play `vocalProgram`,
  * the others what the MIDI file gives them.
@@ -88,8 +96,11 @@ export class Synth {
 	#offset = 0;
 	#rate = 1;
 	#loop: [number, number] | null = null;
-	/** While sounding: playback is at `pos` at context time `time`, with this loop. */
-	#anchor: { time: number; pos: number; loop: [number, number] | null } | null = null;
+	/**
+	 * While sounding: playback is at `pos` at context time `time`, and goes on at `rate` with this
+	 * loop. Before `time`, it goes as `prev` says: a speed change takes effect a little later.
+	 */
+	#anchor: Anchor | null = null;
 
 	constructor(
 		parts: Part[],
@@ -222,8 +233,10 @@ export class Synth {
 
 	/** The position at context time `time`, the same way the audio thread counts it. */
 	#posAt(time: number) {
-		const { time: t0, pos, loop } = this.#anchor!;
-		const p = pos + Math.max(0, time - t0) * this.#rate;
+		let a = this.#anchor!;
+		while (a.prev && time < a.time) a = a.prev;
+		const { time: t0, pos, rate, loop } = a;
+		const p = pos + Math.max(0, time - t0) * rate;
 		if (!loop || pos >= loop[1] || p < loop[1]) return p;
 		return loop[0] + ((p - loop[1]) % (loop[1] - loop[0]));
 	}
@@ -248,7 +261,7 @@ export class Synth {
 		const frame = this.#soon(),
 			pos = this.#offset,
 			loop = this.#loop;
-		this.#anchor = { time: frame / this.#ctx.sampleRate, pos, loop };
+		this.#anchor = { time: frame / this.#ctx.sampleRate, pos, rate: this.#rate, loop };
 		this.#post({ type: 'play', frame, pos, rate: this.#rate, loop, seek: true });
 	}
 
@@ -308,7 +321,8 @@ export class Synth {
 		if (this.#anchor) {
 			const frame = this.#soon(),
 				time = frame / this.#ctx.sampleRate;
-			this.#anchor = { ...this.#anchor, time, pos: this.#posAt(time) };
+			const prev = this.#anchor;
+			this.#anchor = { time, pos: this.#posAt(time), rate, loop: prev.loop, prev };
 			this.#post({ type: 'play', frame, pos: this.#anchor.pos, rate, loop: null, seek: false });
 		}
 		this.#rate = rate;

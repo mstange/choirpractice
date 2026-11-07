@@ -38,8 +38,12 @@ function pitchRange(notes: Note[]): [number, number] {
 function prepare(c: HTMLCanvasElement) {
 	const dpr = devicePixelRatio,
 		W = c.clientWidth,
-		H = c.clientHeight;
-	if (c.width !== W * dpr || c.height !== H * dpr) [c.width, c.height] = [W * dpr, H * dpr];
+		H = c.clientHeight,
+		// Rounded: the backing store has whole pixels, and a fractional devicePixelRatio (common on
+		// Android) would otherwise resize, and so reset, the canvas on every frame.
+		w = Math.round(W * dpr),
+		h = Math.round(H * dpr);
+	if (c.width !== w || c.height !== h) [c.width, c.height] = [w, h];
 	const g = c.getContext('2d')!;
 	g.setTransform(dpr, 0, 0, dpr, 0, 0);
 	g.clearRect(0, 0, W, H);

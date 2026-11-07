@@ -21,6 +21,8 @@ function media(): Plugin {
 }
 
 export default defineConfig({
+	// For profiles and stack traces of the deployed page.
+	build: { sourcemap: true },
 	plugins: [
 		media(),
 		sveltekit({

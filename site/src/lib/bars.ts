@@ -6,6 +6,8 @@ const SETTLE = 100; // ms that the scale must stay the same before tiles are dra
 const TEXT_MARGIN = 300; // CSS pixels by which a lyric can reach past its note's start
 const EDGE = 10; // CSS pixels by which a bar can reach before its note's start
 
+type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
 let lyricFont: string | undefined;
 
 /**
@@ -86,7 +88,7 @@ function layout(data: PieceData, selected: Set<string>, H: number): Layout {
 }
 
 function roundRect(
-	g: CanvasRenderingContext2D,
+	g: Context2D,
 	x: number,
 	y: number,
 	w: number,
@@ -121,7 +123,7 @@ function drawGrid(g: CanvasRenderingContext2D, L: Layout, W: number) {
  * `past`, they are drawn as they look once the "now" line has passed them.
  */
 function drawMusic(
-	g: CanvasRenderingContext2D,
+	g: Context2D,
 	data: PieceData,
 	colors: Record<string, string>,
 	L: Layout,
@@ -278,43 +280,35 @@ function drawMic(
 	g.restore();
 }
 
-function layer(parent: HTMLElement, tag = 'div') {
-	const el = document.createElement(tag);
-	el.style.cssText = 'position: absolute; top: 0; left: 0; pointer-events: none';
-	parent.append(el);
-	return el;
-}
-
-/** A clipped part of the view, past or future of the "now" line, that holds tiles of the music. */
-interface Side {
-	past: boolean;
-	clip: HTMLElement;
-	scroller: HTMLElement;
-	tiles: Map<number, HTMLCanvasElement>;
+function canvasIn(parent: HTMLElement) {
+	const c = document.createElement('canvas');
+	c.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none';
+	parent.append(c);
+	return c;
 }
 
 /**
  * The Pitch view: bars of each voice's notes on a shared pitch axis, scrolling past a "now" line.
  *
- * The music doesn't change as it scrolls, so it is drawn once, in tiles of TILE device pixels, in
- * two versions: as it looks before the "now" line reaches it, and after. The tiles are canvases in
- * two clipped layers, one on each side of the line, which the compositor moves; only what changes
- * with time is drawn on every frame, into a canvas on top. The pitch grid, which doesn't scroll,
- * has a canvas of its own, and the loop is an element below.
+ * The music doesn't change as it scrolls, so it is drawn once, into ImageBitmap tiles of TILE
+ * device pixels, in two versions: as it looks before the "now" line reaches it, and after. Each
+ * frame draws the tiles at device pixel positions, on each side of the line the version for that
+ * side, and then what changes with time. Only canvases change from frame to frame, which Firefox
+ * paints without building a display list, and the tiles' pixels go to the GPU once. The pitch grid,
+ * which doesn't scroll, has a canvas of its own below.
  *
- * Tiles hold one scale. While the scale changes, for zooming or resizing, the top canvas draws
- * everything instead, and the tiles are drawn once it has settled for SETTLE ms.
+ * Tiles hold one scale. While the scale changes, for zooming or resizing, the view is drawn
+ * without them, and they are drawn once it has settled for SETTLE ms.
  */
 export class BarsView {
 	#el: HTMLElement;
 	#data: PieceData;
 	#colors: Record<string, string>;
-	#loopScroller: HTMLElement;
-	#loop: HTMLElement;
 	#grid: HTMLCanvasElement;
-	#sides: Side[];
-	#overlay: HTMLCanvasElement;
-	#pool: HTMLCanvasElement[] = [];
+	#canvas: HTMLCanvasElement;
+	/** The tiles before and after the "now" line, by index. */
+	#tiles = { future: new Map<number, ImageBitmap>(), past: new Map<number, ImageBitmap>() };
+	#scratch: OffscreenCanvas | undefined;
 	/** The key of the scale and layout, the time it took that value, and the tiles' key. */
 	#key = '';
 	#keySince = 0;
@@ -322,24 +316,8 @@ export class BarsView {
 
 	constructor(el: HTMLElement, data: PieceData, colors: Record<string, string>) {
 		[this.#el, this.#data, this.#colors] = [el, data, colors];
-		this.#loopScroller = layer(el);
-		this.#loop = layer(this.#loopScroller);
-		Object.assign(this.#loop.style, {
-			height: '100%',
-			boxSizing: 'border-box',
-			background: `rgb(${LOOP_RGB} / 0.05)`,
-			borderInline: `1px solid rgb(${LOOP_RGB} / 0.4)`
-		});
-		this.#loopScroller.style.height = '100%';
-		this.#grid = layer(el, 'canvas') as HTMLCanvasElement;
-		this.#sides = [false, true].map((past) => {
-			const clip = layer(el);
-			Object.assign(clip.style, { height: '100%', overflow: 'hidden' });
-			return { past, clip, scroller: layer(clip), tiles: new Map() };
-		});
-		this.#overlay = layer(el, 'canvas') as HTMLCanvasElement;
-		for (const c of [this.#grid, this.#overlay])
-			Object.assign(c.style, { width: '100%', height: '100%' });
+		this.#grid = canvasIn(el);
+		this.#canvas = canvasIn(el);
 	}
 
 	draw(t: number, seconds: number, selected: Set<string>, mic: MicTrace | null, loop: Loop | null) {
@@ -348,94 +326,99 @@ export class BarsView {
 			dpr = devicePixelRatio;
 		const pps = W / seconds,
 			nowX = W * NOW_X;
-		// Snapped to device pixels, so that the tiles are composited without resampling.
+		// Snapped to device pixels, so that the tiles are drawn without resampling.
 		const offset = Math.round((nowX - t * pps) * dpr) / dpr;
 		const X = (s: number) => offset + s * pps;
 		const L = layout(this.#data, selected, H);
 
 		if (!unchanged(this.#grid, '')) drawGrid(prepare(this.#grid).g, L, W);
 
-		this.#loopScroller.style.transform = `translateX(${offset}px)`;
-		this.#loop.style.display = loop?.on ? '' : 'none';
-		if (loop?.on) {
-			const [m0, m1] = [this.#data.measures[loop.from], this.#data.measures[loop.to]];
-			Object.assign(this.#loop.style, { left: `${m0 * pps}px`, width: `${(m1 - m0) * pps}px` });
-		}
-
 		const key = `${pps} ${H} ${dpr} ${[...selected]} ${document.fonts.status}`;
 		const now = performance.now();
 		if (key !== this.#key) [this.#key, this.#keySince] = [key, now];
 		if (key !== this.#tileKey)
-			for (const side of this.#sides) {
-				for (const tile of side.tiles.values()) {
-					tile.remove();
-					this.#pool.push(tile);
-				}
-				side.tiles.clear();
+			for (const tiles of Object.values(this.#tiles)) {
+				for (const tile of tiles.values()) tile.close();
+				tiles.clear();
 			}
 		const tiled = key === this.#tileKey || now - this.#keySince >= SETTLE;
+		// The tiles that each side shows: device pixels k * TILE to (k + 1) * TILE of the music.
+		const sides = [
+			{ past: false, a: nowX, b: W },
+			{ past: true, a: 0, b: nowX }
+		].map((side) => ({
+			...side,
+			k0: Math.floor(((side.a - offset) * dpr) / TILE),
+			k1: Math.ceil(((side.b - offset) * dpr) / TILE)
+		}));
 		if (tiled) {
 			this.#tileKey = key;
 			let ahead = 1; // tiles drawn ahead of need per frame
-			for (const side of this.#sides) {
-				const [a, b] = side.past ? [0, nowX] : [nowX, W];
-				const k0 = Math.floor(((a - offset) * dpr) / TILE),
-					k1 = Math.ceil(((b - offset) * dpr) / TILE);
-				for (const [k, tile] of side.tiles)
+			for (const { past, k0, k1 } of sides) {
+				const tiles = past ? this.#tiles.past : this.#tiles.future;
+				for (const [k, tile] of tiles)
 					if (k < k0 - 1 || k > k1) {
-						tile.remove();
-						this.#pool.push(tile);
-						side.tiles.delete(k);
+						tile.close();
+						tiles.delete(k);
 					}
-				for (let k = k0; k < k1; k++) if (!side.tiles.has(k)) this.#tile(side, k, L, pps);
-				if (!side.tiles.has(k1) && ahead-- > 0) this.#tile(side, k1, L, pps);
-				Object.assign(side.clip.style, { left: `${a}px`, width: `${b - a}px` });
-				side.scroller.style.transform = `translateX(${offset - a}px)`;
+				for (let k = k0; k < k1; k++) if (!tiles.has(k)) this.#tile(tiles, k, past, L, pps);
+				if (!tiles.has(k1) && ahead-- > 0) this.#tile(tiles, k1, past, L, pps);
 			}
 		}
-		for (const side of this.#sides) side.clip.style.display = tiled ? '' : 'none';
 
 		const last = mic?.trail[mic.trail.length - 1];
 		const micKey = mic ? `${mic.trail.length},${last?.t},${mic.now},${mic.shift}` : '';
-		if (unchanged(this.#overlay, `${tiled} ${key} ${offset} ${t} ${micKey}`)) return;
-		const { g } = prepare(this.#overlay);
-		if (!tiled) {
-			const s0 = (-TEXT_MARGIN - offset) / pps,
-				s1 = (W + EDGE - offset) / pps;
-			for (const past of [false, true]) {
-				g.save();
-				g.beginPath();
-				if (past) g.rect(0, 0, nowX, H);
-				else g.rect(nowX, 0, W - nowX, H);
-				g.clip();
-				drawMusic(g, this.#data, this.#colors, L, X, s0, s1, past);
-				g.restore();
-			}
+		const loopKey = loop?.on ? `${loop.from}-${loop.to}` : '';
+		if (unchanged(this.#canvas, `${tiled} ${key} ${offset} ${t} ${micKey} ${loopKey}`)) return;
+		const { g } = prepare(this.#canvas);
+		if (loop?.on) {
+			const x0 = X(this.#data.measures[loop.from]),
+				x1 = X(this.#data.measures[loop.to]);
+			g.fillStyle = `rgb(${LOOP_RGB} / 0.05)`;
+			g.fillRect(x0, 0, x1 - x0, H);
+			g.fillStyle = `rgb(${LOOP_RGB} / 0.4)`;
+			g.fillRect(x0, 0, 1, H);
+			g.fillRect(x1 - 1, 0, 1, H);
+		}
+		for (const { past, a, b, k0, k1 } of sides) {
+			g.save();
+			g.beginPath();
+			g.rect(a, 0, b - a, H);
+			g.clip();
+			if (tiled) {
+				const tiles = past ? this.#tiles.past : this.#tiles.future;
+				for (let k = k0; k < k1; k++) {
+					const tile = tiles.get(k)!;
+					g.drawImage(tile, offset + (k * TILE) / dpr, 0, TILE / dpr, tile.height / dpr);
+				}
+			} else
+				drawMusic(
+					g,
+					this.#data,
+					this.#colors,
+					L,
+					X,
+					(a - TEXT_MARGIN - offset) / pps,
+					(b + EDGE - offset) / pps,
+					past
+				);
+			g.restore();
 		}
 		drawNow(g, this.#colors, L, X, t, nowX, mic);
 	}
 
-	/** Draws tile `k` of `side`, which covers device pixels k * TILE to (k + 1) * TILE of the music. */
-	#tile(side: Side, k: number, L: Layout, pps: number) {
+	/** Draws tile `k`, which covers device pixels k * TILE to (k + 1) * TILE of the music. */
+	#tile(tiles: Map<number, ImageBitmap>, k: number, past: boolean, L: Layout, pps: number) {
 		const dpr = devicePixelRatio,
 			x0 = (k * TILE) / dpr,
-			w = TILE / dpr;
-		const c = this.#pool.pop() ?? (layer(side.scroller, 'canvas') as HTMLCanvasElement);
-		side.scroller.append(c);
-		const h = Math.round(L.H * dpr);
-		if (c.width !== TILE || c.height !== h) [c.width, c.height] = [TILE, h];
-		Object.assign(c.style, {
-			width: `${w}px`,
-			height: `${L.H}px`,
-			transform: `translateX(${x0}px)`
-		});
+			h = Math.round(L.H * dpr);
+		const c = (this.#scratch ??= new OffscreenCanvas(TILE, h));
+		if (c.height !== h) c.height = h;
 		const g = c.getContext('2d')!;
-		g.setTransform(1, 0, 0, 1, 0, 0);
-		g.clearRect(0, 0, c.width, c.height);
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		const s0 = (x0 - TEXT_MARGIN) / pps,
-			s1 = (x0 + w + EDGE) / pps;
-		drawMusic(g, this.#data, this.#colors, L, (s) => s * pps - x0, s0, s1, side.past);
-		side.tiles.set(k, c);
+			s1 = (x0 + TILE / dpr + EDGE) / pps;
+		drawMusic(g, this.#data, this.#colors, L, (s) => s * pps - x0, s0, s1, past);
+		tiles.set(k, c.transferToImageBitmap());
 	}
 }

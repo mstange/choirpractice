@@ -76,7 +76,7 @@ export class Engine {
 	/** Per channel, the gain it approaches and the gain it has. */
 	#gains = new Map<number, { target: number; gain: number }>();
 	#commands: PlayCommand[] = [];
-	/** The next frame to render. */
+	/** The frame of the audio context that render() renders first. */
 	#frame = 0;
 	/** While playing: the score position at #frame. */
 	#play: { pos: number; rate: number; loop: [number, number] | null } | null = null;
@@ -132,9 +132,13 @@ export class Engine {
 		return this.synth.midiChannels[ch];
 	}
 
-	/** Renders the frames from #frame on into `left` and `right`, which it adds to. */
-	render(left: Float32Array, right: Float32Array) {
+	/**
+	 * Renders the frames from `frame` on into `left` and `right`, which it adds to. `frame` counts
+	 * the audio context's frames, the clock of the page's commands, which started before this did.
+	 */
+	render(frame: number, left: Float32Array, right: Float32Array) {
 		const n = left.length;
+		this.#frame = frame;
 		// A gain changes in small steps, which add up to an exponential approach.
 		const step = 1 - Math.exp(-n / (GAIN_TIME * this.#rate));
 		for (const [ch, g] of this.#gains) {
@@ -167,7 +171,6 @@ export class Engine {
 			}
 			i = end;
 		}
-		this.#frame += n;
 	}
 
 	#apply(c: PlayCommand) {

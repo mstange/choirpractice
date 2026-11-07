@@ -3,6 +3,7 @@ import { Engine, type Message } from './synth-engine.ts';
 
 // The globals of the AudioWorkletGlobalScope, which TypeScript has no declarations for.
 declare const sampleRate: number;
+declare const currentFrame: number;
 declare class AudioWorkletProcessor {
 	readonly port: MessagePort;
 }
@@ -19,7 +20,7 @@ registerProcessor(
 		}
 
 		process(_inputs: Float32Array[][], [[left, right]]: Float32Array[][]) {
-			this.#engine.render(left, right);
+			this.#engine.render(currentFrame, left, right);
 			return true;
 		}
 	}

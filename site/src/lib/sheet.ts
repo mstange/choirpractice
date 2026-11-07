@@ -28,6 +28,9 @@ export class Sheet {
 	/** The engraving x at the strip's left edge, in CSS pixels, as currently drawn. */
 	#shown = 0;
 	#drawnAt = 0;
+	/** The strip's left edge and the cursor, in CSS pixels, as of the last `update`. */
+	#left = 0;
+	#cursor = 0;
 
 	constructor(info: Engraving, url: string) {
 		this.info = info;
@@ -59,23 +62,17 @@ export class Sheet {
 	}
 
 	/**
-	 * Draws the page for time `s` into a strip of W x H CSS pixels, scaled to fit the height. A
-	 * `frozen` page stays where it is, for dragging the cursor along it.
+	 * Moves the page on for time `s` in a strip of W x H CSS pixels, scaled to fit the height. A
+	 * `frozen` page stays where it is, for dragging the cursor along it. Returns a key of what `draw`
+	 * would show, or null until the SVG has loaded.
 	 */
-	draw(
-		g: CanvasRenderingContext2D,
-		s: number,
-		W: number,
-		H: number,
-		color: string,
-		frozen: boolean
-	) {
+	update(s: number, W: number, H: number, frozen: boolean): string | null {
 		if (!this.#img) {
 			this.#img = new Image();
 			this.#img.src = this.#url;
 			this.#img.decode().then(() => (this.#ready = true));
 		}
-		if (!this.#ready) return;
+		if (!this.#ready) return null;
 		const dpr = devicePixelRatio,
 			scale = H / this.info.height,
 			ds = scale * dpr;
@@ -84,19 +81,28 @@ export class Sheet {
 			[this.#scale, this.#cssScale, this.#tiles] = [ds, scale, new Map()];
 		}
 
-		const cursor = this.xAt(s) * scale;
-		const page = Math.max(0, Math.floor((cursor - LEAD * W) / (PAGE * W)));
+		this.#cursor = this.xAt(s) * scale;
+		const page = Math.max(0, Math.floor((this.#cursor - LEAD * W) / (PAGE * W)));
 		const target = frozen
 			? this.#shown
 			: Math.max(0, Math.min(page * PAGE * W, this.info.width * scale - W));
 		const now = performance.now() / 1000;
-		// Slide to the next page; jump after seeking.
-		if (Math.abs(target - this.#shown) > W) this.#shown = target;
+		// Slide to the next page; jump after seeking, and when the slide is within half a device pixel,
+		// so that it ends.
+		if (Math.abs(target - this.#shown) > W || Math.abs(target - this.#shown) < 0.5 / dpr)
+			this.#shown = target;
 		else this.#shown += (target - this.#shown) * (1 - Math.exp(-(now - this.#drawnAt) / TURN));
 		this.#drawnAt = now;
-
 		// Snap to device pixels, so that the tiles are drawn without resampling.
-		const left = -Math.round(this.#shown * dpr) / dpr;
+		this.#left = -Math.round(this.#shown * dpr) / dpr;
+		return `${ds} ${this.#left} ${this.#cursor}`;
+	}
+
+	/** Draws the page as of the last `update`, which must have returned a key. */
+	draw(g: CanvasRenderingContext2D, W: number, H: number, color: string) {
+		const dpr = devicePixelRatio,
+			ds = this.#scale,
+			left = this.#left;
 		const k0 = Math.max(0, Math.floor((-left * dpr) / TILE)),
 			k1 = Math.min(Math.ceil((this.info.width * ds) / TILE), Math.ceil(((W - left) * dpr) / TILE));
 		for (const [k, tile] of this.#tiles)
@@ -109,7 +115,7 @@ export class Sheet {
 			g.drawImage(tile, left + (k * TILE) / dpr, 0, tile.width / dpr, tile.height / dpr);
 		}
 		g.fillStyle = color;
-		g.fillRect(left + cursor - 1, 0, 2, H);
+		g.fillRect(left + this.#cursor - 1, 0, 2, H);
 	}
 
 	// An ImageBitmap rather than the OffscreenCanvas itself: Firefox's remote canvas sends a canvas

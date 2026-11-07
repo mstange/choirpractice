@@ -34,6 +34,23 @@ function pitchRange(notes: Note[]): [number, number] {
 	return range;
 }
 
+const drawnKeys = new WeakMap<HTMLCanvasElement, string>();
+
+/**
+ * Whether `c` already shows what `key` describes, at its current size. If not, `key` becomes what
+ * it shows, so the caller has to draw it. Skipping unchanged frames saves the canvas's present,
+ * which is expensive on some platforms.
+ */
+function unchanged(c: HTMLCanvasElement, key: string) {
+	const full = `${c.clientWidth}x${c.clientHeight}@${devicePixelRatio} ${key}`;
+	if (drawnKeys.get(c) === full) return true;
+	drawnKeys.set(c, full);
+	return false;
+}
+
+const loopKey = (loop: Loop | null) =>
+	loop ? `${loop.from}-${loop.to}${loop.on ? '' : 'off'}` : '';
+
 /** Sizes the canvas backing store to its CSS size and returns a context in CSS pixels. */
 function prepare(c: HTMLCanvasElement) {
 	const dpr = devicePixelRatio,
@@ -130,6 +147,11 @@ export function drawBars(
 	mic: MicTrace | null,
 	loop: Loop | null
 ) {
+	const last = mic?.trail[mic.trail.length - 1];
+	// The fonts' status, so that the lyrics are drawn again once their font has loaded.
+	const micKey = mic ? `${mic.trail.length},${last?.t},${mic.now},${mic.shift}` : '';
+	const key = `${t} ${seconds} ${[...selected]} ${loopKey(loop)} ${micKey} ${document.fonts.status}`;
+	if (unchanged(c, key)) return;
 	lyricFont ??= getComputedStyle(document.documentElement).getPropertyValue('--lyric-font');
 	const { g, W, H } = prepare(c);
 	const { nowX, X, tMin, tMax } = timeAxis(W, t, seconds);
@@ -268,6 +290,7 @@ export function drawRuler(
 	seconds: number,
 	loop: Loop | null
 ) {
+	if (unchanged(c, `${t} ${seconds} ${loopKey(loop)}`)) return;
 	const { g, W, H } = prepare(c);
 	const { nowX, X } = timeAxis(W, t, seconds);
 	g.fillStyle = 'rgb(255 255 255 / 0.05)';
@@ -335,9 +358,12 @@ export function drawSheet(
 	color: string,
 	frozen: boolean
 ) {
+	const key = sheet.update(t, c.clientWidth, c.clientHeight, frozen);
+	if (unchanged(c, `${sheet.info.file} ${color} ${key}`)) return;
 	const { g, W, H } = prepare(c);
+	if (key === null) return;
 	g.globalAlpha = 0.85;
-	sheet.draw(g, t, W, H, color, frozen);
+	sheet.draw(g, W, H, color);
 	g.globalAlpha = 1;
 }
 
@@ -352,9 +378,12 @@ export function drawTimeline(
 	t: number,
 	loop: [number, number] | null
 ) {
-	const { g, W, H } = prepare(c);
 	const duration = data.measures[data.measures.length - 1];
 	const dpr = devicePixelRatio;
+	// The playhead in device pixels: it moves less than one in most frames.
+	const playhead = Math.round((t / duration) * c.clientWidth * dpr);
+	if (unchanged(c, `${playhead} ${loop}`)) return;
+	const { g, W, H } = prepare(c);
 	const key = `${W}x${H}@${dpr}`;
 	let cached = timelineCache.get(c);
 	if (cached?.key !== key) {
@@ -385,5 +414,5 @@ export function drawTimeline(
 		g.fillRect(x0, 0, x1 - x0, 3);
 	}
 	g.fillStyle = 'white';
-	g.fillRect((t / duration) * W - 1, 0, 2, H);
+	g.fillRect(playhead / dpr - 1, 0, 2, H);
 }

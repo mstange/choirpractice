@@ -1,6 +1,6 @@
 import { INSTRUMENTS, soundfontFile } from './instruments.ts';
 import { loadSeason, MEDIA_CACHE, mediaUrl, setSavedOffline } from './pieces.ts';
-import { programsUsed } from './synth.svelte.ts';
+import { programsUsed } from './choir-synth.ts';
 import type { PieceData } from './types.ts';
 
 /**

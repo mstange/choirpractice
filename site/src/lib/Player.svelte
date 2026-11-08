@@ -12,7 +12,7 @@
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
 	import type { Saved, Session } from './session.svelte.ts';
-	import { Synth } from './synth.svelte.ts';
+	import { ChoirSynth } from './choir-synth.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
 	// The route re-creates this component for each piece, so props other than the view never change
@@ -53,7 +53,7 @@
 	const accompaniment = parts.filter((p) => !p.vocal).map((p) => p.name);
 	// A part with several channels, such as a cello's arco and pizzicato, keeps its instruments.
 	const playable = parts.some((p) => p.vocal && p.channels.length === 1);
-	const synth = new Synth(
+	const synth = new ChoirSynth(
 		parts,
 		measures[measures.length - 1],
 		(file) => mediaUrl('soundfont', file),

@@ -1,13 +1,15 @@
-import { soundfontFile } from './instruments.ts';
-import type { Message } from './synth-engine.ts';
+import type { Message, ScoreEvent, ScoreNote } from './synth-engine.ts';
 import type { MidiReply, Request, SamplesReply } from './synth-worker.ts';
 import workletUrl from './synth-worklet.ts?worker&url';
-import type { Part } from './types.ts';
 
 /** Seconds between asking the audio thread to start playing and the start. */
 const LEAD = 0.05;
-/** The General MIDI program that can double the vocal parts. */
-const PIANO = 0;
+
+/**
+ * What the audio thread plays: the score's events and notes, and the General MIDI program of each
+ * channel. Channels beyond the score's 16 are given by the `offset` of their events.
+ */
+export type Score = { events: ScoreEvent[]; notes: ScoreNote[]; programs: Map<number, number> };
 
 type Anchor = {
 	time: number;
@@ -18,41 +20,14 @@ type Anchor = {
 };
 
 /**
- * The program of each channel of the parts: vocal parts with one channel play `vocalProgram`,
- * the others what the MIDI file gives them.
- */
-const channelPrograms = (parts: Part[], midi: Map<number, number>, vocalProgram: number) =>
-	new Map(
-		parts.flatMap(({ vocal, channels }) =>
-			channels.map((ch) => [
-				ch,
-				vocal && channels.length === 1 ? vocalProgram : (midi.get(ch) ?? 0)
-			])
-		)
-	);
-
-/** The programs that a piece plays, including the piano that doubles its vocal parts. */
-export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProgram: number) {
-	const used = new Set(channelPrograms(parts, midi, vocalProgram).values());
-	if (parts.some((p) => p.vocal && p.channels.length)) used.add(PIANO);
-	return used;
-}
-/**
- * The velocity of the piano that doubles a note of this velocity: it follows the part's dynamics
- * in the range from 32 to 100, since a soft piano note is hard to hear beside a choir sound.
- */
-const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32)) / 128) : 0);
-
-/**
- * Plays a piece's score.mid with soundfont instruments, each part on its MIDI channels.
+ * Plays a MIDI file with soundfont instruments, one General MIDI program per channel.
  *
  * The audio thread (synth-engine.ts) plays the score from a position at a rate; the page tells it
  * at which sample frame to start, so it knows the position of every later frame. A worker reads
  * the MIDI file and decodes every soundfont sample before the audio thread needs it, only the ones
  * that the notes of a channel use. Until the instruments have loaded, playing waits.
  *
- * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's 16,
- * which stays silent until setPianoGain().
+ * A subclass can change what is played, and on which instruments, by overriding arrange().
  */
 export class Synth {
 	/** Whether the user wants playback, even while waiting. */
@@ -74,18 +49,9 @@ export class Synth {
 	#worker = new Worker(new URL('./synth-worker.ts', import.meta.url), { type: 'module' });
 	#requests = new Map<number, [(reply: never) => void, (error: Error) => void]>();
 	#nextId = 0;
-	#parts: Part[];
-	#soundfontUrl: (file: string) => string;
+	#soundfontUrl: (program: number) => string;
 	/** Per channel, the [key, velocity] of its notes, each once. */
 	#notes = new Map<number, [number, number][]>();
-	/** Per vocal part, the channel of its piano. */
-	#pianos = new Map<string, number>();
-	/**
-	 * The channels of the vocal parts, which play #vocalProgram instead of the score's program. A
-	 * part with several channels, such as a cello's arco and pizzicato, keeps its programs.
-	 */
-	#vocal: number[];
-	#vocalProgram: number;
 	/** Whether the score has been read, so that the notes of each channel are known. */
 	#scored = false;
 	/** Per channel, a count of program changes, so that only the latest one takes effect. */
@@ -102,24 +68,10 @@ export class Synth {
 	 */
 	#anchor: Anchor | null = null;
 
-	constructor(
-		parts: Part[],
-		duration: number,
-		soundfontUrl: (file: string) => string,
-		vocalProgram: number
-	) {
-		this.#parts = parts;
-		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
-		this.#vocalProgram = vocalProgram;
+	/** `soundfontUrl` gives the URL of a General MIDI program's soundfont file. */
+	constructor(duration: number, soundfontUrl: (program: number) => string) {
 		this.duration = duration;
 		this.#soundfontUrl = soundfontUrl;
-		// Channel 9 of every 16 plays drum kits.
-		let next = 16;
-		for (const { name, vocal, channels } of parts) {
-			if (!vocal || !channels.length) continue;
-			if (next % 16 === 9) next++;
-			this.#pianos.set(name, next++);
-		}
 		this.#worker.onmessage = ({ data }) => {
 			const [resolve, reject] = this.#requests.get(data.id)!;
 			this.#requests.delete(data.id);
@@ -140,34 +92,10 @@ export class Synth {
 			for (const [m, transfer] of this.#queue) this.#node.port.postMessage(m, transfer);
 			this.#queue = [];
 
-			const { events, notes, programs } = await this.#request<MidiReply>({
-				type: 'midi',
-				url: midiUrl
-			});
-			// The channel of each score channel's piano.
-			const piano = new Map(
-				this.#parts.flatMap((p) =>
-					this.#pianos.has(p.name) ? p.channels.map((ch) => [ch, this.#pianos.get(p.name)!]) : []
-				)
+			const { events, notes, programs } = this.arrange(
+				await this.#request<MidiReply>({ type: 'midi', url: midiUrl })
 			);
-			// The piano gets the part's notes, at pianoVelocity(), and its volume, pan and expression,
-			// so that it sits at the level of the part it doubles.
-			const doubled = events.flatMap((e) => {
-				const type = e.data[0] & 0xf0,
-					ch = piano.get(e.data[0] & 0x0f);
-				const copied =
-					type === 0x80 || type === 0x90 || (type === 0xb0 && [7, 10, 11].includes(e.data[1]));
-				if (ch === undefined || !copied) return [e];
-				const data =
-					type === 0x90 ? [type, e.data[1], pianoVelocity(e.data[2])] : [type, ...e.data.slice(1)];
-				return [e, { t: e.t, data, offset: ch }];
-			});
-			notes.push(
-				...notes
-					.filter((n) => piano.has(n.ch))
-					.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
-			);
-			this.#post({ type: 'score', events: doubled, notes });
+			this.#post({ type: 'score', events, notes });
 			for (const n of notes) {
 				const list = this.#notes.get(n.ch) ?? [];
 				if (!list.some(([k, v]) => k === n.key && v === n.vel)) list.push([n.key, n.vel]);
@@ -175,15 +103,31 @@ export class Synth {
 			}
 			this.#scored = true;
 			const loads = [];
-			for (const [ch, program] of channelPrograms(this.#parts, programs, this.#vocalProgram))
-				loads.push(this.#setProgram(ch, program));
-			for (const ch of this.#pianos.values()) loads.push(this.#setProgram(ch, PIANO));
+			for (const [ch, program] of programs) loads.push(this.setProgram(ch, program));
 			await Promise.all(loads);
 			this.#ready = true;
 			if (this.playing && this.waiting) this.#start();
 		} catch (e) {
-			if (!this.error) this.error = String((e as Error).message ?? e);
+			this.fail(e);
 		}
+	}
+
+	/**
+	 * What to play of the MIDI file, and on which programs: by default all of it, each channel that
+	 * plays notes on the program it has at its first note.
+	 */
+	protected arrange(midi: MidiReply): Score {
+		return midi;
+	}
+
+	/** Whether load() has read the score: until then, changing a program waits for arrange(). */
+	protected get scored() {
+		return this.#scored;
+	}
+
+	/** Shows the first error. */
+	protected fail(e: unknown) {
+		if (!this.error) this.error = String((e as Error).message ?? e);
 	}
 
 	#request<T>(req: Request): Promise<T> {
@@ -198,23 +142,11 @@ export class Synth {
 		else this.#queue.push([m, transfer]);
 	}
 
-	/** Plays the vocal parts with another General MIDI program. */
-	async setVocalProgram(program: number) {
-		if (program === this.#vocalProgram) return;
-		this.#vocalProgram = program;
-		// Until then, load() picks it up.
-		if (!this.#scored) return;
-		try {
-			await Promise.all(this.#vocal.map((ch) => this.#setProgram(ch, program)));
-		} catch (e) {
-			if (!this.error) this.error = String((e as Error).message ?? e);
-		}
-	}
-
-	async #setProgram(ch: number, program: number) {
+	/** Plays channel `ch` with another General MIDI program, once its samples are loaded. */
+	protected async setProgram(ch: number, program: number) {
 		const change = (this.#changes.get(ch) ?? 0) + 1;
 		this.#changes.set(ch, change);
-		const id = this.#soundfontUrl(soundfontFile(program));
+		const id = this.#soundfontUrl(program);
 		const { buffer, samples } = await this.#request<SamplesReply>({
 			type: 'samples',
 			url: id,
@@ -333,15 +265,9 @@ export class Synth {
 		return this.#rate;
 	}
 
-	setGain(part: string, gain: number) {
-		for (const ch of this.#parts.find((p) => p.name === part)?.channels ?? [])
-			this.#post({ type: 'gain', ch, gain });
-	}
-
-	/** Sets the gain of the piano that doubles a vocal part. */
-	setPianoGain(part: string, gain: number) {
-		const ch = this.#pianos.get(part);
-		if (ch !== undefined) this.#post({ type: 'gain', ch, gain });
+	/** Sets the gain of channel `ch` (also beyond the score's 16). */
+	setChannelGain(ch: number, gain: number) {
+		this.#post({ type: 'gain', ch, gain });
 	}
 
 	close() {

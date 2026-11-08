@@ -39,7 +39,7 @@
 	const SPATIUM_PX = 7; // size of the sheet music: the distance between staff lines
 	const BAR_SECONDS = [2, 40]; // how far the Pitch view zooms in and out
 	const SPEEDS = [0.5, 1.5]; // the range of playback speeds
-	const SPEED_STEP = 0.1; // how much Slower and Faster change the speed
+	const SPEED_STEP = 0.05; // how much Slower and Faster change the speed
 	const HOLD_MS = 300; // a press of Just me that lasts longer is a hold, not a tap
 	const SELECTED_BOOST = 0.5; // how much louder the selected parts get at full emphasis
 	const PIANO_BOOST = 1.5; // how much louder the piano that doubles them gets at full emphasis

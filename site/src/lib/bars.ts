@@ -38,7 +38,8 @@ function pitchAxis(voices: Voice[], H: number) {
 		hi = Math.max(...ranges.map((r) => r[1]));
 	const top = 38,
 		bottom = H - 34;
-	const step = (bottom - top) / (hi - lo + 2);
+	// A view shorter than its margins has no room for bars: a negative height would throw.
+	const step = Math.max(0, bottom - top) / (hi - lo + 2);
 	return { lo: lo - 1, hi: hi + 1, step, y: (p: number) => bottom - (p - lo + 1) * step };
 }
 
@@ -358,6 +359,8 @@ export class BarsView {
 		const W = this.#el.clientWidth,
 			H = this.#el.clientHeight,
 			dpr = devicePixelRatio;
+		// A window too short for the view leaves it no height, and an empty tile can't be made.
+		if (H < 1 || W < 1) return;
 		const pps = W / seconds,
 			nowX = W * NOW_X;
 		// Snapped to device pixels, so that the tiles are drawn without resampling.

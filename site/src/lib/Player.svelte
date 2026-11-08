@@ -8,6 +8,7 @@
 	import { install } from './install.svelte.ts';
 	import { INSTRUMENTS } from './instruments.ts';
 	import Lyrics from './Lyrics.svelte';
+	import { phraseTime } from './lyrics.ts';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
 	import type { Saved, Session } from './session.svelte.ts';
@@ -60,10 +61,10 @@
 		session.vocalProgram
 	);
 
-	// Background hue changes at the first syllable starting with each configured word.
+	// Background hue changes where the sung text first continues with each configured phrase.
 	// svelte-ignore state_referenced_locally
-	const hueTimes = (entry.hues ?? []).map(([word, hue]) => [
-		voices[0].syllables.find((s) => s.text.startsWith(word))?.t0 ?? Infinity,
+	const hueTimes = (entry.hues ?? []).map(([phrase, hue]) => [
+		phraseTime(voices[0].syllables, phrase),
 		hue
 	]);
 

@@ -25,6 +25,25 @@ function words(sylls: Syllable[]): Word[] {
 	return out;
 }
 
+/**
+ * The time of the first syllable at which the sung text continues with `phrase`. Text before a
+ * "|" in it must come just before that syllable: "ha ha |oh" is an "oh" after "ha ha ".
+ */
+export function phraseTime(sylls: Syllable[], phrase: string): number {
+	const [before, after] = phrase.includes('|') ? phrase.split('|') : ['', phrase];
+	let text = '';
+	const starts = sylls.map((s, i) => {
+		if (i > 0 && startsWord(sylls, i)) text += ' ';
+		const start = text.length;
+		text += s.text;
+		return start;
+	});
+	const i = starts.findIndex(
+		(start) => text.startsWith(after, start) && text.slice(0, start).endsWith(before)
+	);
+	return i < 0 ? Infinity : sylls[i].t0;
+}
+
 const wordText = (w: Word) => w.map((s) => s.text).join('');
 const phraseLength = (ws: Word[]) => ws.reduce((n, w) => n + wordText(w).length + 1, -1);
 const phraseText = (ws: Word[]) => ws.map(wordText).join(' ');

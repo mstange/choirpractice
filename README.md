@@ -53,7 +53,7 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
    ```json
    { "slug": "my-slug", "label": "Menu label", "hues": [["", 215], ["Word", 30]] }
    ```
-   `hues` is optional. Each `[word, hue]` changes the background hue at the first syllable of the first vocal part that starts with `word`; an empty word matches from the beginning.
+   `hues` is optional. Each `[phrase, hue]` changes the background hue at the first syllable of the first vocal part from which its lyrics continue with `phrase`, such as `"Empty of ink"` (syllables joined into words, words separated by a space, punctuation included). Text before a `|` must come just before: `"ha ha |oh"` matches at an "oh" after "ha ha", for a section that repeats earlier lyrics. An empty phrase matches from the beginning. Pick the start of a section, so that the background doesn't change in the middle of a line.
    `levels` is optional too: `{ "Violoncello": 0.2 }` starts that accompaniment part's volume slider at 0.2 instead of 0.6.
 3. **Serve and look.** Either run the dev server, which reloads on changes:
    ```sh

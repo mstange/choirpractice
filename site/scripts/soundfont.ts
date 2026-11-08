@@ -4,8 +4,9 @@
 //
 // Usage: node site/scripts/soundfont.ts
 import { copyFileSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { BasicMIDI, BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
+import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
 import { INSTRUMENTS, soundfontFile } from '../src/lib/instruments.ts';
+import { parseMidi } from '../src/lib/midi.ts';
 
 const SOURCE =
 	process.env.SOUNDFONT ?? '/Applications/MuseScore 4.app/Contents/Resources/sound/MS Basic.sf3';
@@ -19,19 +20,10 @@ const read = (path: string) => {
 
 const programs = new Set(INSTRUMENTS.map(([p]) => p));
 for (const path of globSync(`${media}*/*/score.mid`)) {
-	const midi = BasicMIDI.fromArrayBuffer(read(path));
-	const program = new Map<number, number>();
-	const played = new Set<number>();
-	for (const track of midi.tracks)
-		for (const e of track.events) {
-			const type = e.statusByte & 0xf0,
-				ch = e.statusByte & 0x0f;
-			if (type === 0xc0 && !program.has(ch)) program.set(ch, e.data[0]);
-			if (type === 0x90 && e.data[1] > 0) played.add(ch);
-		}
+	const { programs: played } = parseMidi(read(path));
 	// Channel 10 plays drum kits, which the page doesn't load.
 	if (played.has(9)) throw new Error(`${path}: percussion (MIDI channel 10) isn't supported`);
-	for (const ch of played) programs.add(program.get(ch) ?? 0);
+	for (const program of played.values()) programs.add(program);
 }
 
 const source = SoundBankLoader.fromArrayBuffer(read(SOURCE));

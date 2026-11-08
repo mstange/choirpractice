@@ -5,7 +5,7 @@ import type { ScoreEvent, ScoreNote } from './synth-engine.ts';
 export type MidiReply = {
 	events: ScoreEvent[];
 	notes: ScoreNote[];
-	/** The program of each channel that plays notes. */
+	/** The program of each channel that plays notes, at its first note. */
 	programs: Map<number, number>;
 };
 
@@ -15,6 +15,7 @@ export function parseMidi(buffer: ArrayBuffer): MidiReply {
 	const events: ScoreEvent[] = [],
 		notes: ScoreNote[] = [],
 		programs = new Map<number, number>(),
+		current = new Map<number, number>(),
 		open = new Map<number, ScoreNote>();
 	const all = midi.tracks
 		.flatMap((track) => track.events)
@@ -24,8 +25,10 @@ export function parseMidi(buffer: ArrayBuffer): MidiReply {
 		const t = midi.midiTicksToSeconds(e.ticks),
 			type = e.statusByte & 0xf0,
 			ch = e.statusByte & 0x0f;
+		// A channel can have program changes from several tracks: MuseScore gives a cello's
+		// pizzicato a channel that the next staff's track then reuses with its own program.
 		if (type === 0xc0) {
-			if (!programs.has(ch)) programs.set(ch, e.data[0]);
+			current.set(ch, e.data[0]);
 			continue;
 		}
 		events.push({ t, data: [e.statusByte, ...e.data] });
@@ -40,7 +43,7 @@ export function parseMidi(buffer: ArrayBuffer): MidiReply {
 			const n = { t0: t, t1: Infinity, ch, key: e.data[0], vel: e.data[1] };
 			notes.push(n);
 			open.set(key, n);
-			if (!programs.has(ch)) programs.set(ch, 0);
+			if (!programs.has(ch)) programs.set(ch, current.get(ch) ?? 0);
 		}
 	}
 	return { events, notes, programs };

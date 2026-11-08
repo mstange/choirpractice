@@ -68,9 +68,23 @@ export class Sheet {
 	 */
 	update(s: number, W: number, H: number, frozen: boolean): string | null {
 		if (!this.#img) {
-			this.#img = new Image();
-			this.#img.src = this.#url;
-			this.#img.decode().then(() => (this.#ready = true));
+			// Fetched like piece.json, which places the music on it: an <img> could come from the
+			// browser's image cache, which Firefox reuses within a tab even for no-store responses, and so
+			// be an earlier build than piece.json.
+			const img = (this.#img = new Image());
+			fetch(this.#url)
+				.then((res) => {
+					if (!res.ok) throw new Error(`${this.#url}: HTTP ${res.status}`);
+					return res.blob();
+				})
+				.then((blob) => {
+					img.src = URL.createObjectURL(blob);
+					return img.decode();
+				})
+				.then(() => {
+					URL.revokeObjectURL(img.src);
+					this.#ready = true;
+				});
 		}
 		if (!this.#ready) return null;
 		const dpr = devicePixelRatio,

@@ -53,7 +53,7 @@
 	const arrow = 'M6 3l5 5-5 5';
 </script>
 
-<svelte:head><title>Choir player</title></svelte:head>
+<svelte:head><title>Choir Practice</title></svelte:head>
 
 <Page>
 	<div class="home">

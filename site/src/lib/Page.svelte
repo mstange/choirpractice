@@ -11,7 +11,7 @@
 	<header>
 		<a class="brand" href={resolve('/')}>
 			<img src={asset('icon.svg')} alt="" width="28" height="28" />
-			Choir player
+			Choir Practice
 		</a>
 	</header>
 	<main>

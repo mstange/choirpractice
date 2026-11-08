@@ -14,19 +14,10 @@ trap 'rm -rf "$WORK"' EXIT
 PIECE="$WORK/piece"
 mkdir -p "$WORK/src" "$PIECE"
 unzip -q "$1" -d "$WORK/src"
-# Some scores give notes a playback event of length 0, which MuseScore's MIDI export plays as
-# silence (an automated transcription did that to all its grace notes). The score is exported
-# from a copy without such events.
-python3 -I -c '
-import pathlib, re, sys
-for p in pathlib.Path(sys.argv[1]).glob("*.mscx"):
-    p.write_text(re.sub(r"\s*<Events>\s*<Event>\s*<len>0</len>\s*</Event>\s*</Events>", "", p.read_text()))
-' "$WORK/src"
-(cd "$WORK/src" && zip -qr "$WORK/score.mscz" .)
-"$MSCORE" -o "$PIECE/score.mid" "$WORK/score.mscz" >/dev/null 2>&1
-"$MSCORE" -o "$WORK/score.musicxml" "$WORK/score.mscz" >/dev/null 2>&1
+"$MSCORE" -o "$PIECE/score.mid" "$1" >/dev/null 2>&1
+"$MSCORE" -o "$WORK/score.musicxml" "$1" >/dev/null 2>&1
 python3 -I "$TOOLS/extract.py" "$WORK/score.musicxml" "$PIECE/score.mid" "$WORK/src" "$PIECE/piece.json"
-python3 -I "$TOOLS/engrave.py" "$MSCORE" "$WORK/score.mscz" "$WORK/src" "$WORK/score.musicxml" "$PIECE/score.mid" "$PIECE/piece.json" "$WORK"
+python3 -I "$TOOLS/engrave.py" "$MSCORE" "$1" "$WORK/src" "$WORK/score.musicxml" "$PIECE/score.mid" "$PIECE/piece.json" "$WORK"
 
 mkdir -p "$OUT"
 rm -rf "$OUT/audio" "$OUT/engraving"

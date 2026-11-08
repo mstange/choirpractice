@@ -1,31 +1,16 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { saveOffline } from '#lib/offline.ts';
+	import Page from '#lib/Page.svelte';
+	import PitchArt from '#lib/PitchArt.svelte';
 	import { loadSeason, savedOffline } from '#lib/pieces.ts';
 
 	let { data } = $props();
 
-	// Saving for offline use needs the service worker, which needs a secure context.
-	const canSave = 'serviceWorker' in navigator;
-	let offline = $state(savedOffline());
-	/** Per season being saved, how far it got, or why it failed. */
-	let saving: Record<string, string> = $state({});
-
-	async function save(season: string) {
-		try {
-			await saveOffline(season, (done, total) => (saving[season] = `Saving… ${done} of ${total}`));
-			// Otherwise the browser may delete the files when it runs short of space.
-			await navigator.storage.persist();
-			delete saving[season];
-		} catch (e) {
-			saving[season] = `Couldn’t save it: ${(e as Error).message}`;
-		}
-		offline = savedOffline();
-	}
-
+	const offline = savedOffline();
 	let link = $state('');
 	let problem = $state('');
+	let input: HTMLInputElement;
 
 	/** Opens the season of a pasted link, or of a key on its own. */
 	async function open(event: SubmitEvent) {
@@ -45,136 +30,279 @@
 		}
 		goto(resolve('/[season]', { season }));
 	}
+
+	const FEATURES = [
+		[
+			'Your part up front',
+			'Pick the parts you sing. They play louder than the rest, and “Just me” turns the others down further.'
+		],
+		[
+			'Notes and words',
+			'Watch the pitch of every note go by, or read along with the lyrics, with the sheet music below.'
+		],
+		[
+			'At your own speed',
+			'Slow down without changing the pitch, and loop the measures you’re working on.'
+		],
+		[
+			'Sing along',
+			'Turn on the microphone to see the pitch you sing right on top of the notes. Best with headphones.'
+		]
+	];
+
+	const arrow = 'M6 3l5 5-5 5';
 </script>
 
 <svelte:head><title>Choir player</title></svelte:head>
 
-<main>
-	<h1>Choir player</h1>
-	<p>
-		Plays a choir piece with each part’s notes and lyrics. Open it with the link your choir gave
-		you.
-	</p>
+<Page>
+	<div class="home">
+		<div class="hero">
+			<div class="pitch">
+				<h1>Practice your part with the whole choir</h1>
+				<p class="lead muted">
+					Hear the piece with your part up front, follow its notes and words as they go by, and slow
+					down the tricky bits. On your computer or your phone.
+				</p>
+				<div class="actions">
+					{#if data.seasons.length === 0}
+						<button class="button primary" onclick={() => input.focus()}
+							>Open your choir’s link</button
+						>
+					{/if}
+					<a
+						class="button"
+						href={resolve('/[season]/[slug]/[[view=view]]', {
+							season: 'demo',
+							slug: 'frere-jacques'
+						})}>Try the demo</a
+					>
+				</div>
+			</div>
+			<div class="art"><PitchArt /></div>
+		</div>
 
-	{#each data.seasons as { season, loaded } (season)}
-		<section>
-			{#if loaded}
-				<h2>{loaded.title}</h2>
-				<ul>
-					{#each loaded.pieces as entry (entry.slug)}
+		{#if data.seasons.length}
+			<section class="yours">
+				<h2>Your music</h2>
+				<ul class="cards">
+					{#each data.seasons as { season, loaded } (season)}
 						<li>
-							<a href={resolve('/[season]/[slug]/[[view=view]]', { season, slug: entry.slug })}
-								>{entry.label}</a
-							>
+							<a class="card" href={resolve('/[season]', { season })}>
+								<div class="text">
+									{#if loaded}
+										<div class="title">{loaded.title}</div>
+										<div class="sub">
+											{loaded.pieces.length === 1 ? '1 piece' : `${loaded.pieces.length} pieces`}
+											{#if offline.includes(season)}· saved for offline use{/if}
+										</div>
+									{:else}
+										<div class="title">A season you opened before</div>
+										<div class="sub">Couldn’t be loaded just now</div>
+									{/if}
+								</div>
+								<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d={arrow} /></svg>
+							</a>
 						</li>
 					{/each}
 				</ul>
-				{#if canSave}
-					<p class="offline">
-						{#if saving[season]}
-							{saving[season]}
-						{:else if offline.includes(season)}
-							Saved for offline use. <button onclick={() => save(season)}>Update</button>
-						{:else}
-							<button onclick={() => save(season)}>Save for offline use</button>
-						{/if}
-					</p>
-				{/if}
-			{:else}
-				<p>
-					The pieces of <a href={resolve('/[season]', { season })}>a season you opened before</a>
-					couldn’t be loaded.
+			</section>
+		{/if}
+
+		<section>
+			<form onsubmit={open}>
+				<label for="link"
+					><h2>{data.seasons.length ? 'Got a new link?' : 'Got a link from your choir?'}</h2></label
+				>
+				<p class="muted">
+					Open it, or paste it here. The music you open is listed on this page afterwards.
 				</p>
-			{/if}
+				<div class="field">
+					<input
+						id="link"
+						bind:this={input}
+						bind:value={link}
+						placeholder="https://choirpractice.app/#/…"
+						autocomplete="off"
+						autocapitalize="off"
+						spellcheck="false"
+					/>
+					<button class="button primary">Open</button>
+				</div>
+				{#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+			</form>
 		</section>
-	{/each}
 
-	<form onsubmit={open}>
-		<label for="link">Link or key from your choir</label>
-		<div>
-			<input
-				id="link"
-				bind:value={link}
-				autocomplete="off"
-				autocapitalize="off"
-				spellcheck="false"
-			/>
-			<button>Open</button>
-		</div>
-		{#if problem}<p class="problem">{problem}</p>{/if}
-	</form>
+		<section>
+			<h2>What it does</h2>
+			<ul class="features">
+				{#each FEATURES as [title, text] (title)}
+					<li>
+						<h3>{title}</h3>
+						<p class="muted">{text}</p>
+					</li>
+				{/each}
+			</ul>
+		</section>
 
-	<p>
-		Try it with <a href={resolve('/[season]', { season: 'demo' })}>Frère Jacques</a>, a round in
-		four parts, or with Mozart’s
-		<a
-			href={resolve('/[season]/[slug]/[[view=view]]', { season: 'demo', slug: 'ave-verum-corpus' })}
-			>Ave verum corpus</a
-		> for choir and piano.
-	</p>
-</main>
+		<section>
+			<h2>Try it out</h2>
+			<ul class="cards">
+				<li>
+					<a
+						class="card"
+						href={resolve('/[season]/[slug]/[[view=view]]', {
+							season: 'demo',
+							slug: 'frere-jacques'
+						})}
+					>
+						<div class="text">
+							<div class="title">Frère Jacques</div>
+							<div class="sub">A round in four parts</div>
+						</div>
+						<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d={arrow} /></svg>
+					</a>
+				</li>
+				<li>
+					<a
+						class="card"
+						href={resolve('/[season]/[slug]/[[view=view]]', {
+							season: 'demo',
+							slug: 'ave-verum-corpus'
+						})}
+					>
+						<div class="text">
+							<div class="title">Ave verum corpus</div>
+							<div class="sub">Mozart, for choir and piano</div>
+						</div>
+						<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true"><path d={arrow} /></svg>
+					</a>
+				</li>
+			</ul>
+		</section>
+	</div>
+</Page>
 
 <style>
-	a {
-		color: inherit;
+	.home {
+		display: flex;
+		flex-direction: column;
 	}
 
-	main {
-		max-width: 36em;
-		margin: 0 auto;
-		padding: 15vh 1em;
-		/* The body doesn't scroll, for the player's sake. */
-		height: 100%;
-		overflow-y: auto;
+	.hero {
+		display: grid;
+		grid-template-columns: 1fr 1.1fr;
+		align-items: center;
+		gap: 40px;
+		padding-top: 6vh;
 	}
 
-	h2 {
-		margin: 0.6em 0 0;
-		font-size: 1.1em;
+	h1 {
+		font-size: clamp(34px, 5vw, 52px);
+		margin: 0 0 16px;
 	}
 
-	section {
-		margin: 1.5em 0;
-		padding: 0.25em 1em;
-		background: var(--surface);
-		border-radius: 6px;
+	.lead {
+		font-size: 18px;
+		margin: 0 0 28px;
+		max-width: 30em;
 	}
 
-	ul {
-		padding-left: 1.2em;
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
 	}
 
-	li {
-		margin: 0.3em 0;
-		font-size: 1.15em;
-	}
-
-	.offline {
-		color: #aaa;
+	.art {
+		height: 320px;
+		border-radius: 18px;
+		overflow: hidden;
+		background: rgb(0 0 0 / 0.25);
+		border: 1px solid var(--border);
 	}
 
 	form {
-		margin: 1.5em 0;
+		max-width: 560px;
 	}
 
-	form div {
+	label h2 {
+		margin-bottom: 4px;
+	}
+
+	form p {
+		margin: 0 0 12px;
+	}
+
+	.field {
 		display: flex;
-		gap: 0.5em;
-		margin-top: 0.3em;
+		gap: 8px;
 	}
 
 	input {
 		flex: 1;
 		min-width: 0;
+		min-height: 44px;
+		padding: 0 16px;
 		font: inherit;
-		padding: 0.3em 0.5em;
+		color: inherit;
+		background: rgb(0 0 0 / 0.3);
+		border: 1px solid var(--border);
+		border-radius: 22px;
 	}
 
-	button {
-		font: inherit;
+	input:focus-visible {
+		outline: 2px solid #eee;
+		outline-offset: 1px;
 	}
 
 	.problem {
+		margin-top: 10px;
 		color: #f99;
+	}
+
+	.features {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+		gap: 24px;
+		padding: 0;
+		margin: 0;
+		list-style: none;
+	}
+
+	h3 {
+		margin: 0 0 4px;
+		font-size: 16px;
+	}
+
+	.features p {
+		margin: 0;
+		font-size: 15px;
+	}
+
+	@media (max-width: 760px) {
+		.hero {
+			grid-template-columns: 1fr;
+			gap: 28px;
+			padding-top: 2vh;
+		}
+
+		.lead {
+			font-size: 17px;
+		}
+
+		.art {
+			height: 240px;
+		}
+
+		/* Someone coming back finds their music first. */
+		.yours {
+			order: -1;
+			margin: 2vh 0 0;
+		}
+
+		.home:has(.yours) .hero {
+			padding-top: 44px;
+		}
 	}
 </style>

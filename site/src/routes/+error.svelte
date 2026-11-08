@@ -1,16 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
+	import Page from '#lib/Page.svelte';
 </script>
 
-<main>
+<Page>
 	<h1>{page.status === 404 ? 'Not found' : 'Something went wrong'}</h1>
-	<p>{page.error?.message}</p>
-</main>
+	<p class="muted">{page.error?.message}</p>
+	<a class="button" href={resolve('/')}>To the start page</a>
+</Page>
 
 <style>
-	main {
-		max-width: 36em;
-		margin: 15vh auto;
-		padding: 0 1em;
+	h1 {
+		font-size: clamp(32px, 5vw, 48px);
+		margin: 6vh 0 8px;
+	}
+
+	p {
+		margin: 0 0 24px;
+		font-size: 17px;
 	}
 </style>

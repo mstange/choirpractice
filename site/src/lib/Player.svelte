@@ -615,7 +615,12 @@
 	{/if}
 	<header>
 		<nav class="pieces">
-			<a class="home" href={resolve('/')} title="All seasons" aria-label="All seasons">
+			<a
+				class="home"
+				href={resolve('/[season]', { season })}
+				title="All pieces"
+				aria-label="All pieces"
+			>
 				<svg viewBox="0 0 16 16" aria-hidden="true"
 					><path d="M8 2 1.5 7.5H3.5V14h3.5v-4h2v4h3.5V7.5h2z" /></svg
 				>

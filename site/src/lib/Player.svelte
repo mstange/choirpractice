@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { BarsView, type MicTrace } from './bars.ts';
-	import { NOW_X, drawSheet, drawTimeline, type Loop } from './canvas.ts';
+	import { NOW_X, drawSheet, drawTimeline, freeCanvas, type Loop } from './canvas.ts';
 	import { assignColors } from './colors.ts';
 	import { install } from './install.svelte.ts';
 	import { INSTRUMENTS } from './instruments.ts';
@@ -203,9 +203,23 @@
 			drawTimeline(timelineCanvas, piece, colors, t, loopTimes);
 			raf = requestAnimationFrame(frame);
 		});
+		// A hidden page gives back the memory of its canvases and tiles, and draws them again once it is
+		// shown. Chrome on Android can also lose them in the background, and then the canvases come back
+		// blank; it fires contextrestored on them, which doesn't bubble, so it is captured.
+		const free = () => {
+			bars?.free();
+			for (const s of sheets) s.free();
+			if (sheetCanvas) freeCanvas(sheetCanvas);
+			freeCanvas(timelineCanvas);
+		};
+		const hidden = () => document.hidden && free();
+		document.addEventListener('visibilitychange', hidden);
+		document.addEventListener('contextrestored', free, true);
 		return () => {
 			cancelAnimationFrame(raf);
 			synth.close();
+			document.removeEventListener('visibilitychange', hidden);
+			document.removeEventListener('contextrestored', free, true);
 		};
 	});
 

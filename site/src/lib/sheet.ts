@@ -112,6 +112,12 @@ export class Sheet {
 		return `${ds} ${this.#left} ${this.#cursor}`;
 	}
 
+	/** Gives back the memory of the tiles; `draw` draws them again. */
+	free() {
+		for (const tile of this.#tiles.values()) tile.close();
+		this.#tiles.clear();
+	}
+
 	/** Draws the page as of the last `update`, which must have returned a key. */
 	draw(g: CanvasRenderingContext2D, W: number, H: number, color: string) {
 		const dpr = devicePixelRatio,

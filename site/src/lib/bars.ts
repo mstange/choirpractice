@@ -1,4 +1,4 @@
-import { LOOP_RGB, NOW_X, prepare, unchanged, type Loop } from './canvas.ts';
+import { LOOP_RGB, NOW_X, freeCanvas, prepare, unchanged, type Loop } from './canvas.ts';
 import type { Note, PieceData, Voice } from './types.ts';
 
 const TILE = 1024; // tile width in device pixels
@@ -346,6 +346,17 @@ export class BarsView {
 		[this.#el, this.#data, this.#colors] = [el, data, colors];
 		this.#grid = canvasIn(el);
 		this.#canvas = canvasIn(el);
+	}
+
+	/** Gives back the memory of the canvases and tiles; the next `draw` draws them again. */
+	free() {
+		freeCanvas(this.#grid);
+		freeCanvas(this.#canvas);
+		for (const tiles of Object.values(this.#tiles)) {
+			for (const tile of tiles.values()) tile.close();
+			tiles.clear();
+		}
+		this.#scratch = undefined;
 	}
 
 	draw(

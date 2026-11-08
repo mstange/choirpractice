@@ -25,6 +25,16 @@ export function unchanged(c: HTMLCanvasElement, key: string) {
 	return false;
 }
 
+/**
+ * Gives back the memory of `c` and of what is cached for it, and has it drawn again from scratch.
+ */
+export function freeCanvas(c: HTMLCanvasElement) {
+	[c.width, c.height] = [0, 0];
+	drawnKeys.delete(c);
+	timelineCache.get(c)?.base.close();
+	timelineCache.delete(c);
+}
+
 /** Sizes the canvas backing store to its CSS size and returns a context in CSS pixels. */
 export function prepare(c: HTMLCanvasElement) {
 	const dpr = devicePixelRatio,

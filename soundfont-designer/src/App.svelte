@@ -220,6 +220,22 @@
 				title="-90 is off"
 			/>
 			<Slider
+				label="Noise from"
+				bind:value={patch.tone.noiseLow}
+				min={50}
+				max={10000}
+				log
+				unit="Hz"
+			/>
+			<Slider
+				label="Noise to"
+				bind:value={patch.tone.noiseHigh}
+				min={200}
+				max={16000}
+				log
+				unit="Hz"
+			/>
+			<Slider
 				label="Aperiodic"
 				bind:value={patch.tone.aperiodic}
 				min={-90}
@@ -242,22 +258,6 @@
 				max={12}
 				unit="dB/oct"
 				title="How much the aperiodic noise changes against the harmonics per octave of frequency, from 1 kHz"
-			/>
-			<Slider
-				label="Noise from"
-				bind:value={patch.tone.noiseLow}
-				min={50}
-				max={10000}
-				log
-				unit="Hz"
-			/>
-			<Slider
-				label="Noise to"
-				bind:value={patch.tone.noiseHigh}
-				min={200}
-				max={16000}
-				log
-				unit="Hz"
 			/>
 		</section>
 

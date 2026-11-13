@@ -183,6 +183,14 @@
 			/>
 			<Slider label="Detune" bind:value={patch.tone.detune} min={0} max={60} unit="cents" />
 			<Slider
+				label="Fundamental detune"
+				bind:value={patch.tone.fundamentalDetune}
+				min={0}
+				max={60}
+				unit="cents"
+				title="Detune of the fundamental's copies; they beat into a throb of the whole note, and 0 has none"
+			/>
+			<Slider
 				label="Stereo width"
 				bind:value={patch.tone.width}
 				min={0}

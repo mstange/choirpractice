@@ -22,12 +22,17 @@ export interface Patch {
 		/** The highest harmonic. */
 		maxHarmonic: number;
 		/**
-		 * Copies of each harmonic above the fundamental, detuned at random against each other, for a
-		 * sound like several singers.
+		 * Copies of each harmonic, detuned at random against each other, for a sound like several
+		 * singers.
 		 */
 		voices: number;
 		/** The most cents between two copies. */
 		detune: number;
+		/**
+		 * The same for the fundamental's copies, which beat into a throb of the whole note; 0 is a
+		 * fundamental without copies.
+		 */
+		fundamentalDetune: number;
 		/**
 		 * In percent: 0 is one mono sample per zone; above, a left and a right sample, each with an
 		 * ensemble of its own, panned apart by this much (100 is hard left and right).
@@ -114,6 +119,7 @@ export const DEFAULT_PATCH: Patch = {
 		maxHarmonic: 48,
 		voices: 3,
 		detune: 14,
+		fundamentalDetune: 0,
 		width: 0,
 		noise: -32,
 		noiseLow: 1500,

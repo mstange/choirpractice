@@ -156,6 +156,24 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 	}
 }
 
+// Copies of the fundamental make it beat, without changing the loudness.
+{
+	const beating = SoundBankLoader.fromArrayBuffer(
+		buildBank(
+			complete({ ...DEFAULT_PATCH, tone: { ...DEFAULT_PATCH.tone, fundamentalDetune: 25 } }),
+			PROGRAM
+		).bank.writeSF2({ writeDefaultModulators: true })
+	);
+	for (const key of [45, 60, 72]) {
+		const steady = sustain(render(custom, PROGRAM, key, 64, 64, 4)),
+			copies = sustain(render(beating, PROGRAM, key, 64, 64, 4));
+		check(
+			Math.abs(copies - steady) < 1,
+			`key ${key}: as loud with copies of the fundamental (${fmt(copies)} vs ${fmt(steady)} dB)`
+		);
+	}
+}
+
 // Swapping the bank behind an id, as the page does, keeps the controllers and takes effect for
 // the next note.
 {

@@ -70,21 +70,26 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 		re[k] += amp * Math.cos(phase);
 		im[k] += amp * Math.sin(phase);
 	};
-	const { voices, detune, noise, noiseLow, noiseHigh } = p.tone;
+	const { voices, detune, fundamentalDetune, noise, noiseLow, noiseHigh } = p.tone;
 	const harmonics = toneHarmonics(p, key, f, sr),
 		lp = lowpass(p, f);
-	// The ensemble: each harmonic above the fundamental is split into `voices` partials, each
-	// detuned at random within ±detune/2. Detuned copies of the fundamental, the strongest partial,
-	// would beat into a throb of the whole note; the upper harmonics beat at unrelated rates, which
-	// shimmers but keeps the loudness steady.
+	// The ensemble: each harmonic is split into `voices` partials, each detuned at random within
+	// ±detune/2. The upper harmonics beat at unrelated rates, which shimmers but keeps the loudness
+	// steady; the fundamental, the strongest partial, beats into a throb of the whole note, so its
+	// copies have a detune of their own, and none at 0.
 	harmonics.forEach((h, i) => {
-		const copies = i === 0 ? 1 : voices;
+		const spread = i === 0 ? fundamentalDetune : detune,
+			copies = spread ? voices : 1;
 		if (copies === 1)
 			return add(Math.round(h.freq / bin), h.amp, 2 * Math.PI * shared() + (side * Math.PI) / 2);
+		// Copies that fall on the same bin are one partial, of their power together: with random
+		// phases, their amplitudes would add up to anything from nothing to all of them.
+		const power = new Map<number, number>();
 		for (let v = 0; v < copies; v++) {
-			const cents = detune * (rand() - 0.5);
-			add(Math.round((h.freq * 2 ** (cents / 1200)) / bin), h.amp / Math.sqrt(copies));
+			const k = Math.round((h.freq * 2 ** ((spread * (rand() - 0.5)) / 1200)) / bin);
+			power.set(k, (power.get(k) ?? 0) + h.amp ** 2 / copies);
 		}
+		for (const [k, pk] of power) add(k, Math.sqrt(pk));
 	});
 	if (noise > -90) {
 		// A power of 10^(noise/10) against the harmonics' 1, as they come out of the filter.

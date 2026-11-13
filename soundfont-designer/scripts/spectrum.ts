@@ -126,12 +126,13 @@ for (const key of keys) {
 			`spread ${avg((i) => a[i].cents).toFixed(0)} / ${avg((i) => c[i].cents).toFixed(0)} cents (Aahs / patch)`
 	);
 
-	// The strongest harmonic below 1 kHz, of Choir Aahs, and a high one.
+	// The fundamental, the strongest harmonic below 1 kHz of Choir Aahs, and a high one.
 	const strong = a.slice(0, Math.max(1, Math.floor(1000 / f0)));
-	for (const h of [
+	for (const h of new Set([
+		1,
 		strong.indexOf(strong.reduce((x, y) => (y.level > x.level ? y : x))) + 1,
 		Math.min(count, Math.round(2500 / f0))
-	]) {
+	])) {
 		const ma = motion(sa, f0, h),
 			mc = motion(sc, f0, h);
 		console.log(

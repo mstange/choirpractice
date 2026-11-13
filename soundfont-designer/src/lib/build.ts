@@ -50,19 +50,23 @@ export function zones(spacing: number): Zone[] {
  * into a signal with an inverse FFT, so that every partial and the noise repeat exactly. The
  * partials fall on the FFT's bins, so the fundamental is off by up to half a bin; `correction`
  * is the pitch correction in cents that makes up for it.
+ *
+ * In stereo, `side` 0 and 1 are the left and right sample. Each side has its own ensemble and
+ * noise. A partial without copies is in both, a quarter period apart: then the sides add up in
+ * power, like unrelated signals, at any pan and in mono.
  */
-export function toneSample(p: Patch, key: number) {
+export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 	const sr = p.output.sampleRate,
 		n = 2 ** Math.round(Math.log2(p.output.loop * sr)),
 		bin = sr / n;
-	const rand = random(p.output.seed * 1000 + key);
+	const rand = random(p.output.seed * 1000 + key + 250 * side),
+		shared = random(p.output.seed * 1000 + key + 125);
 	const f0 = keyFreq(key),
 		f = Math.max(1, Math.round(f0 / bin)) * bin;
 	const re = new Float64Array(n),
 		im = new Float64Array(n);
-	const add = (k: number, amp: number) => {
+	const add = (k: number, amp: number, phase = 2 * Math.PI * rand()) => {
 		if (k <= 0 || k >= n / 2) return;
-		const phase = 2 * Math.PI * rand();
 		re[k] += amp * Math.cos(phase);
 		im[k] += amp * Math.sin(phase);
 	};
@@ -75,8 +79,10 @@ export function toneSample(p: Patch, key: number) {
 	// shimmers but keeps the loudness steady.
 	harmonics.forEach((h, i) => {
 		const copies = i === 0 ? 1 : voices;
+		if (copies === 1)
+			return add(Math.round(h.freq / bin), h.amp, 2 * Math.PI * shared() + (side * Math.PI) / 2);
 		for (let v = 0; v < copies; v++) {
-			const cents = copies === 1 ? 0 : detune * (rand() - 0.5);
+			const cents = detune * (rand() - 0.5);
 			add(Math.round((h.freq * 2 ** (cents / 1200)) / bin), h.amp / Math.sqrt(copies));
 		}
 	});
@@ -281,7 +287,7 @@ export function buildBank(p: Patch, program: number): Built {
 	// What the samples depend on: not the levels, which the zones' attenuation sets.
 	const { sampleRate, loop, seed } = p.output;
 	const toneKey = JSON.stringify([
-			{ ...p.tone, level: 0 },
+			{ ...p.tone, level: 0, width: 0 },
 			p.formant,
 			p.eq,
 			p.filter,
@@ -295,18 +301,28 @@ export function buildBank(p: Patch, program: number): Built {
 			sampleRate,
 			seed
 		]);
+	// In stereo, the sides are unrelated signals, which panning at constant power adds up to twice
+	// the power of one sample in the middle.
+	const { width } = p.tone,
+		sides = width ? (['L', 'R'] as const) : (['M'] as const),
+		sideGain = toneGain / Math.sqrt(sides.length);
 	for (const { root, min, max } of zones(p.output.spacing)) {
-		const t = cached(`tone ${root} ${toneKey}`, () => toneSample(p, root));
-		const ts = store(`tone ${root}`, t.data.slice(), root, toneGain, true);
-		ts.sample.pitchCorrection = t.correction;
-		const tz = tone.createZone(ts.sample);
-		tz.keyRange = { min, max };
-		tz.setGenerator(G.initialAttenuation, ts.attenuation);
-		if (p.filter.harmonic < 64)
-			tz.setGenerator(
-				G.initialFilterFc,
-				Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic))
-			);
+		const stored = sides.map((name, side) => {
+			const t = cached(`tone ${root} ${side} ${toneKey}`, () => toneSample(p, root, side as 0 | 1));
+			const ts = store(`tone ${root}${width ? name : ''}`, t.data.slice(), root, sideGain, true);
+			ts.sample.pitchCorrection = t.correction;
+			const tz = tone.createZone(ts.sample);
+			tz.keyRange = { min, max };
+			tz.setGenerator(G.initialAttenuation, ts.attenuation);
+			if (width) tz.setGenerator(G.pan, Math.round((side ? 5 : -5) * width));
+			if (p.filter.harmonic < 64)
+				tz.setGenerator(
+					G.initialFilterFc,
+					Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic))
+				);
+			return ts.sample;
+		});
+		if (width) stored[0].setLinkedSample(stored[1], SampleTypes.leftSample);
 		if (p.attack.enabled) {
 			const data = cached(`attack ${root} ${attackKey}`, () => attackSample(p, root));
 			const as = store(`attack ${root}`, data.slice(), root, attackGain, false);

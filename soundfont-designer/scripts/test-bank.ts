@@ -102,6 +102,59 @@ const tilt = (cc: number) => {
 };
 check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(tilt(127))} dB)`);
 
+// In stereo, the sides are separate ensembles, as loud together as the mono sample. Mixed down to
+// mono, nothing cancels: the sides add up in power, where a mono sample in the middle adds up in
+// amplitude, 3 dB louder.
+{
+	const wide = (width: number) =>
+		SoundBankLoader.fromArrayBuffer(
+			buildBank(
+				complete({ ...DEFAULT_PATCH, tone: { ...DEFAULT_PATCH.tone, width } }),
+				PROGRAM
+			).bank.writeSF2({ writeDefaultModulators: true })
+		);
+	/** Seconds 1 to 4 of a note: the power of both channels and of their sum, and their correlation. */
+	const stereo = (b: BasicSoundBank, key: number) => {
+		const synth = new SpessaSynthProcessor(RATE, { effectsEnabled: false });
+		synth.soundBankManager.addSoundBank(b, 'b');
+		synth.programChange(0, PROGRAM);
+		synth.controllerChange(0, 2, 100);
+		synth.noteOn(0, key, 100);
+		const l = new Float32Array(4 * RATE),
+			r = new Float32Array(4 * RATE);
+		for (let i = 0; i < l.length; i += 128) synth.process(l, r, i, 128);
+		let ll = 0,
+			rr = 0,
+			lr = 0;
+		for (let i = RATE; i < l.length; i++) {
+			ll += l[i] * l[i];
+			rr += r[i] * r[i];
+			lr += l[i] * r[i];
+		}
+		const db = (e: number) => 10 * Math.log10(e / (3 * RATE));
+		return { both: db(ll + rr), mono: db(ll + rr + 2 * lr), corr: lr / Math.sqrt(ll * rr) };
+	};
+	const narrow = wide(0),
+		hard = wide(100),
+		half = wide(50);
+	for (const key of [45, 60, 72]) {
+		const m = stereo(narrow, key),
+			s = stereo(hard, key),
+			h = stereo(half, key);
+		console.log(
+			`key ${key}: width 0/50/100: ${fmt(m.both)}${fmt(h.both)}${fmt(s.both)} dB, ` +
+				`in mono ${fmt(m.mono)}${fmt(h.mono)}${fmt(s.mono)} dB, ` +
+				`correlation ${m.corr.toFixed(2)} ${h.corr.toFixed(2)} ${s.corr.toFixed(2)}`
+		);
+		check(
+			Math.abs(s.both - m.both) < 1 && Math.abs(h.both - m.both) < 1,
+			`key ${key}: as loud in stereo`
+		);
+		check(Math.abs(s.mono - s.both) < 1, `key ${key}: nothing cancels mixed to mono`);
+		check(Math.abs(s.corr) < 0.3, `key ${key}: the sides are unrelated at width 100`);
+	}
+}
+
 // Swapping the bank behind an id, as the page does, keeps the controllers and takes effect for
 // the next note.
 {

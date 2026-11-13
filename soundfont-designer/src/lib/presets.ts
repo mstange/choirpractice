@@ -7,7 +7,7 @@ export const STARTING_POINTS: Patch[] = [
 	d,
 	complete({
 		name: 'Soft Aah',
-		tone: { ...d.tone, tilt: -10, voices: 5, detune: 20 },
+		tone: { ...d.tone, tilt: -10, voices: 5, detune: 20, width: 100 },
 		formant: { vowel: 'a', amount: 0.8, width: 2 },
 		env: { ...d.env, attack: 90 },
 		onset: { time: 90, bright: 0, scoop: 0 },

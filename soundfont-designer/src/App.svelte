@@ -149,6 +149,14 @@
 			/>
 			<Slider label="Detune" bind:value={patch.tone.detune} min={0} max={60} unit="cents" />
 			<Slider
+				label="Stereo width"
+				bind:value={patch.tone.width}
+				min={0}
+				max={100}
+				unit="%"
+				title="0 is one mono sample; above, a left and a right sample with an ensemble each, panned apart by this much"
+			/>
+			<Slider
 				label="Breath noise"
 				bind:value={patch.tone.noise}
 				min={-90}

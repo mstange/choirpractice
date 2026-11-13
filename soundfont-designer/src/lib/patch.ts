@@ -28,6 +28,11 @@ export interface Patch {
 		voices: number;
 		/** The most cents between two copies. */
 		detune: number;
+		/**
+		 * In percent: 0 is one mono sample per zone; above, a left and a right sample, each with an
+		 * ensemble of its own, panned apart by this much (100 is hard left and right).
+		 */
+		width: number;
 		/** Level of the breath noise against the harmonics, in dB. */
 		noise: number;
 		noiseLow: number;
@@ -96,6 +101,7 @@ export const DEFAULT_PATCH: Patch = {
 		maxHarmonic: 48,
 		voices: 3,
 		detune: 14,
+		width: 0,
 		noise: -32,
 		noiseLow: 1500,
 		noiseHigh: 7000

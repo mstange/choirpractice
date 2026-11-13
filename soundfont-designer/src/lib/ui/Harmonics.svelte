@@ -18,7 +18,7 @@
 	 */
 	const levels = $derived.by(() => {
 		const f0 = keyFreq(previewKey),
-			eq = toneEq(patch),
+			eq = toneEq(patch, previewKey),
 			lp = lowpass(patch, f0),
 			{ tilt, even, harmonics, maxHarmonic } = patch.tone;
 		return Array.from({ length: HARMONICS }, (_, i) => {

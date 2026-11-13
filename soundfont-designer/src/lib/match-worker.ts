@@ -4,7 +4,8 @@ import { matchContour } from './measure.ts';
 import type { Patch } from './patch.ts';
 
 export type MatchRequest = { patch: Patch; program: number; url: string };
-export type MatchReply = { contour: number[]; before: number; after: number } | { error: string };
+export type MatchReply =
+	{ contour: number[][]; before: number; after: number; keys: number[] } | { error: string };
 
 onmessage = async ({ data: { patch, program, url } }: MessageEvent<MatchRequest>) => {
 	try {

@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
-import { MATCH_KEYS, fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
-import { DEFAULT_PATCH, complete } from '../src/lib/patch.ts';
+import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
+import { DEFAULT_PATCH, MATCH_KEYS, complete } from '../src/lib/patch.ts';
 import { Engine } from '../src/lib/synth/synth-engine.ts';
 
 const RATE = 48000,
@@ -257,7 +257,7 @@ if (aahs) {
 			MATCH_KEYS
 		).before;
 	check(
-		again < matched.before - 2 && again < matched.after + 1,
+		again < matched.before - 3 && again < matched.after + 1,
 		`matched to Choir Aahs: ${matched.before.toFixed(1)} → ${again.toFixed(1)} dB rms ` +
 			`(fitted ${matched.after.toFixed(1)})`
 	);

@@ -9,7 +9,6 @@ import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
 import { ifft, keyFreq } from '../src/lib/dsp.ts';
 import {
-	MATCH_KEYS,
 	RATE,
 	db,
 	fitContour,
@@ -21,7 +20,7 @@ import {
 	render,
 	spectrum
 } from '../src/lib/measure.ts';
-import { complete } from '../src/lib/patch.ts';
+import { CONTOUR_KEYS, MATCH_KEYS, complete } from '../src/lib/patch.ts';
 import { STARTING_POINTS } from '../src/lib/presets.ts';
 
 const soundfonts = new URL('../../choirpractice-app/media/soundfont/', import.meta.url).pathname;
@@ -45,7 +44,7 @@ if (matching) {
 	console.log(
 		`matched on keys ${MATCH_KEYS.join(', ')} in ${((performance.now() - t) / 1000).toFixed(1)} s: ` +
 			`${m.before.toFixed(1)} dB rms before, ${m.after.toFixed(1)} dB as fitted\n` +
-			`contour: ${m.contour.join(' ')}`
+			m.contour.map((row, g) => `contour at ${CONTOUR_KEYS[g]}: ${row.join(' ')}`).join('\n')
 	);
 }
 const custom = patchBank(patch);

@@ -43,10 +43,11 @@ export interface Patch {
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
-	 * dB added to the tone, harmonics and breath noise, at CONTOUR_FREQS, in between along the
-	 * logarithm of the frequency, at the same frequencies on every key.
+	 * dB added to the tone, harmonics and breath noise, per register of CONTOUR_KEYS at
+	 * CONTOUR_FREQS: in between along the logarithm of the frequency, and from key to key in
+	 * between the registers.
 	 */
-	contour: number[];
+	contour: number[][];
 	/** The tone's volume envelope, in ms and dB. */
 	env: { attack: number; hold: number; decay: number; sustain: number; release: number };
 	/** At the start of each note, the tone is brighter and can start flat, for `time` ms. */
@@ -98,6 +99,10 @@ export const HARMONICS = 32;
 
 /** Third octaves from 50 Hz to 12.7 kHz. */
 export const CONTOUR_FREQS = Array.from({ length: 25 }, (_, i) => 50 * 2 ** (i / 3));
+/** The keys of the contour's registers: E2 and E5. */
+export const CONTOUR_KEYS = [40, 76];
+/** The keys that Match fits the contour on, across the vocal parts' range. */
+export const MATCH_KEYS = [40, 46, 52, 58, 64, 70, 76];
 
 export const DEFAULT_PATCH: Patch = {
 	name: 'Practice Voice',
@@ -121,7 +126,7 @@ export const DEFAULT_PATCH: Patch = {
 		{ type: 'peak', freq: 3000, gain: 3, q: 1.2 },
 		{ type: 'highshelf', freq: 8000, gain: -3, q: 0.7 }
 	],
-	contour: Array(CONTOUR_FREQS.length).fill(0),
+	contour: CONTOUR_KEYS.map(() => Array(CONTOUR_FREQS.length).fill(0)),
 	env: { attack: 25, hold: 0, decay: 300, sustain: -3, release: 180 },
 	onset: { time: 90, bright: 1200, scoop: 0 },
 	vibrato: { rate: 5.3, depth: 12, delay: 450 },
@@ -151,6 +156,9 @@ export function complete(p: Partial<Patch>): Patch {
 			v && typeof v === 'object' && !Array.isArray(v)
 				? { ...(d[k] as object), ...structuredClone(v) }
 				: structuredClone(v);
+	// A contour of one register, as patches had it at first, is every register's.
+	const contour = d.contour as number[] | number[][];
+	if (typeof contour[0] === 'number') d.contour = CONTOUR_KEYS.map(() => [...contour]);
 	return d as unknown as Patch;
 }
 

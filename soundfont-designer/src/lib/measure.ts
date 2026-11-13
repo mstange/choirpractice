@@ -3,15 +3,14 @@
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from './build.ts';
 import { ifft, keyFreq } from './dsp.ts';
-import { CONTOUR_FREQS, type Patch } from './patch.ts';
+import { CONTOUR_FREQS, CONTOUR_KEYS, MATCH_KEYS, type Patch } from './patch.ts';
+import { between, CONTOUR_OCTAVES } from './spectrum.ts';
 
 export const RATE = 32000,
 	N = 2 ** 15;
 const FROM = 1.5,
 	TO = 4.5,
 	VELOCITY = 80;
-/** The keys that a contour is fitted on, across the vocal parts' range. */
-export const MATCH_KEYS = [40, 46, 52, 58, 64, 70, 76];
 
 export const db = (p: number) => 10 * Math.log10(p + 1e-30);
 const median = (a: number[]) => a.sort((x, y) => x - y)[a.length >> 1];
@@ -118,36 +117,48 @@ function solve(a: Float64Array[], b: Float64Array) {
 	return x;
 }
 
-/** How much neighbouring points of the contour are held together, against one harmonic's error. */
-const SMOOTH = 1;
+/**
+ * How much neighbouring points of a register's contour are held together, and the same point of
+ * neighbouring registers, against one harmonic's error.
+ */
+const SMOOTH = 1,
+	TIE = 0.1;
 
 /**
- * The change to the contour that brings the patch's harmonics, `ours[k]` on `keys[k]`, nearest
- * the reference's, `theirs[k]`: by least squares over the reference's harmonics that are above
- * its noise and within 50 dB of its strongest, with an offset of its own for each key, since
- * each key's tone is normalized to the same loudness. Also the rms error in dB of those
- * harmonics, before and after.
+ * The change to the contour, per register of `registers`, that brings the patch's harmonics,
+ * `ours[k]` on `keys[k]`, nearest the reference's, `theirs[k]`: by least squares over the
+ * reference's harmonics that are above its noise and within 50 dB of its strongest, with an
+ * offset of its own for each key, since each key's tone is normalized to the same loudness. Also
+ * the rms error in dB of those harmonics, before and after, and after per key.
  */
-export function fitContour(theirs: Harmonic[][], ours: Harmonic[][], keys: number[]) {
+export function fitContour(
+	theirs: Harmonic[][],
+	ours: Harmonic[][],
+	keys: number[],
+	registers = CONTOUR_KEYS
+) {
 	const n = CONTOUR_FREQS.length,
-		m = n + keys.length;
-	const rows: { terms: [number, number][]; e: number }[] = [];
+		r = registers.length,
+		m = r * n + keys.length;
+	const rows: { terms: [number, number][]; k: number; e: number }[] = [];
 	keys.forEach((key, k) => {
 		const f0 = keyFreq(key),
+			[ra, rb, t] = between(registers, key),
 			top = Math.max(...theirs[k].map((h) => h.level)),
 			ourTop = Math.max(...ours[k].map((h) => h.level));
 		theirs[k].forEach((h, i) => {
 			const o = ours[k][i];
 			if (!o || h.level <= h.noise || db(h.level / top) < -50 || db(o.level / ourTop) < -70) return;
-			const x = Math.max(0, Math.min(n - 1, 3 * Math.log2(((i + 1) * f0) / CONTOUR_FREQS[0]))),
-				j = Math.min(n - 2, Math.floor(x)),
-				t = x - j;
+			const [ja, jb, u] = between(CONTOUR_OCTAVES, Math.log2((i + 1) * f0));
 			rows.push({
 				terms: [
-					[j, 1 - t],
-					[j + 1, t],
-					[n + k, 1]
+					[ra * n + ja, (1 - t) * (1 - u)],
+					[ra * n + jb, (1 - t) * u],
+					[rb * n + ja, t * (1 - u)],
+					[rb * n + jb, t * u],
+					[r * n + k, 1]
 				],
+				k,
 				e: db(h.level) - db(o.level)
 			});
 		});
@@ -159,34 +170,45 @@ export function fitContour(theirs: Harmonic[][], ours: Harmonic[][], keys: numbe
 			b[p] += wp * e;
 			for (const [q, wq] of terms) a[p][q] += wp * wq;
 		}
-	for (let j = 0; j < n; j++) {
-		// A little of the contour's own size keeps it determined, where only smoothness holds it.
-		a[j][j] += 0.01;
-		if (j < n - 1) {
-			a[j][j] += SMOOTH;
-			a[j + 1][j + 1] += SMOOTH;
-			a[j][j + 1] -= SMOOTH;
-			a[j + 1][j] -= SMOOTH;
+	const hold = (p: number, q: number, w: number) => {
+		a[p][p] += w;
+		a[q][q] += w;
+		a[p][q] -= w;
+		a[q][p] -= w;
+	};
+	for (let g = 0; g < r; g++)
+		for (let j = 0; j < n; j++) {
+			// A little of the contour's own size keeps it determined, where only smoothness holds it.
+			a[g * n + j][g * n + j] += 0.01;
+			if (j < n - 1) hold(g * n + j, g * n + j + 1, SMOOTH);
+			if (g < r - 1) hold(g * n + j, (g + 1) * n + j, TIE);
 		}
-	}
 	const x = solve(a, b);
-	const rms = (f: (r: (typeof rows)[0]) => number) =>
-		Math.sqrt(rows.reduce((s, r) => s + f(r) ** 2, 0) / rows.length);
+	const rms = (f: (row: (typeof rows)[0]) => number) =>
+		Math.sqrt(rows.reduce((s, row) => s + f(row) ** 2, 0) / rows.length);
 	// Before: with the best offset of each key alone, the mean error of its harmonics.
 	const mean = keys.map((_, k) => {
-		const own = rows.filter((r) => r.terms[2][0] === n + k);
-		return own.reduce((s, r) => s + r.e, 0) / own.length;
+		const own = rows.filter((row) => row.k === k);
+		return own.reduce((s, row) => s + row.e, 0) / own.length;
 	});
+	const fitted = (row: (typeof rows)[0]) =>
+		row.e - row.terms.reduce((s, [p, w]) => s + w * x[p], 0);
 	return {
-		change: Array.from(x.subarray(0, n)),
-		before: rms((r) => r.e - mean[r.terms[2][0] - n]),
-		after: rms((r) => r.e - r.terms.reduce((s, [p, w]) => s + w * x[p], 0))
+		change: registers.map((_, g) => Array.from(x.subarray(g * n, (g + 1) * n))),
+		before: rms((row) => row.e - mean[row.k]),
+		after: rms(fitted),
+		/** Per key, the rms error after. */
+		keys: keys.map((_, k) => {
+			const own = rows.filter((row) => row.k === k);
+			return Math.sqrt(own.reduce((s, row) => s + fitted(row) ** 2, 0) / own.length);
+		})
 	};
 }
 
 /**
  * The patch's contour changed to bring its sustain nearest that of `program` in `reference`, on
- * MATCH_KEYS, with its highest point at 0 dB, and the rms error per harmonic before and after.
+ * MATCH_KEYS, with its highest point at 0 dB, and the rms error per harmonic before and after,
+ * also per key.
  */
 export function matchContour(reference: BasicSoundBank, program: number, patch: Patch) {
 	const ours = patchBank(patch);
@@ -195,11 +217,12 @@ export function matchContour(reference: BasicSoundBank, program: number, patch: 
 		MATCH_KEYS.map((key) => measure(ours, 0, key)),
 		MATCH_KEYS
 	);
-	const raw = patch.contour.map((v, j) => v + fit.change[j]),
-		top = Math.max(...raw);
+	const raw = patch.contour.map((row, g) => row.map((v, j) => v + fit.change[g][j])),
+		top = Math.max(...raw.flat());
 	return {
-		contour: raw.map((v) => Math.max(-60, Math.round((v - top) * 2) / 2)),
+		contour: raw.map((row) => row.map((v) => Math.max(-60, Math.round((v - top) * 2) / 2))),
 		before: fit.before,
-		after: fit.after
+		after: fit.after,
+		keys: fit.keys
 	};
 }

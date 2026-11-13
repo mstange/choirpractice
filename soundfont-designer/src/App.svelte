@@ -2,7 +2,15 @@
 	import { Builder } from './lib/builder.svelte.ts';
 	import { DESIGNED, INSTRUMENTS, type DesignerSynth } from './lib/designer-synth.ts';
 	import { match } from './lib/matcher.ts';
-	import { CONTOUR_FREQS, complete, type EqType, type Patch, type Vowel } from './lib/patch.ts';
+	import {
+		CONTOUR_FREQS,
+		CONTOUR_KEYS,
+		MATCH_KEYS,
+		complete,
+		type EqType,
+		type Patch,
+		type Vowel
+	} from './lib/patch.ts';
 	import { STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
@@ -56,6 +64,10 @@
 		download(`${slug(patch.name)}-${program}.sf2`, file, 'audio/x-soundfont');
 	}
 
+	/** The register of the contour that is drawn on. */
+	let contourRegister = $state(0);
+	const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+	const noteName = (key: number) => `${NOTE_NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
 	/** The instrument that Match measures, and what the last match did. */
 	let matchProgram = $state(52),
 		matching = $state(false),
@@ -70,7 +82,9 @@
 			patch.contour = r.contour;
 			matchResult =
 				`Matched to ${label}: the harmonics were ${r.before.toFixed(1)} dB (rms) from ` +
-				`${label}'s, and are now about ${r.after.toFixed(1)} dB.`;
+				`${label}'s, and are now about ${r.after.toFixed(1)} dB: ` +
+				MATCH_KEYS.map((key, k) => `${noteName(key)} ${r.keys[k].toFixed(1)}`).join(', ') +
+				'.';
 		}
 	}
 
@@ -250,13 +264,22 @@
 
 		<section>
 			<h2>Tone: spectral contour</h2>
-			<Contour {patch} {previewKey} />
+			<Contour {patch} {previewKey} register={contourRegister} />
 			<p class="hint">
-				Raises and lowers the tone, harmonics and breath noise, at the same frequencies on every
-				key; draw to change it. Match measures the sustain of an instrument and of this patch at mf,
-				on keys from E2 to E5, and sets the contour that brings this patch's harmonics nearest the
-				instrument's.
+				Raises and lowers the tone, harmonics and breath noise, at fixed frequencies. There is a
+				contour for E2 and one for E5, and the keys in between mix them: draw on either; the dashed
+				line is the preview key's. Match measures the sustain of an instrument and of this patch at
+				mf, on keys from E2 to E5, and sets the contour that brings this patch's harmonics nearest
+				the instrument's.
 			</p>
+			<div class="buttons">
+				Draw
+				{#each CONTOUR_KEYS as key, g (key)}
+					<button class:on={contourRegister === g} onclick={() => (contourRegister = g)}
+						>{noteName(key)}</button
+					>
+				{/each}
+			</div>
 			<div class="buttons">
 				<select bind:value={matchProgram}>
 					{#each INSTRUMENTS.filter(([p]) => p !== DESIGNED) as [p, label] (p)}<option value={p}
@@ -266,7 +289,11 @@
 				<button disabled={matching} onclick={matchContour}
 					>{matching ? 'Matching…' : 'Match'}</button
 				>
-				<button onclick={() => (patch.contour = Array(CONTOUR_FREQS.length).fill(0))}>Flat</button>
+				<button
+					onclick={() =>
+						(patch.contour = CONTOUR_KEYS.map(() => Array(CONTOUR_FREQS.length).fill(0)))}
+					>Flat</button
+				>
 			</div>
 			{#if matchResult}<p class="hint">{matchResult}</p>{/if}
 		</section>

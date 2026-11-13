@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { keyFreq } from '../dsp.ts';
-	import { CONTOUR_FREQS, type Patch } from '../patch.ts';
+	import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from '../patch.ts';
 	import { contourCurve, NYQUIST } from '../spectrum.ts';
 	import { logX, prepare, xLog } from './canvas.ts';
 
-	let { patch, previewKey }: { patch: Patch; previewKey: number } = $props();
+	let {
+		patch,
+		previewKey,
+		register = 0
+	}: { patch: Patch; previewKey: number; register?: number } = $props();
 
 	let canvas: HTMLCanvasElement;
 	let width = $state(0);
@@ -49,17 +53,27 @@
 			ctx.lineTo(x(k * f0), h - PAD - 10);
 			ctx.stroke();
 		}
-		const gain = contourCurve(patch.contour);
-		ctx.strokeStyle = '#60d0e0';
-		ctx.lineWidth = 2;
-		ctx.beginPath();
-		for (let px = 0; px <= w; px += 2) ctx.lineTo(px, y(gain(xLog(px, LO, HI, w)), h));
-		ctx.stroke();
-		ctx.lineWidth = 1;
+		const curve = (gain: (f: number) => number, style: string, lw: number, dash: number[] = []) => {
+			ctx.strokeStyle = style;
+			ctx.lineWidth = lw;
+			ctx.setLineDash(dash);
+			ctx.beginPath();
+			for (let px = 0; px <= w; px += 2) ctx.lineTo(px, y(gain(xLog(px, LO, HI, w)), h));
+			ctx.stroke();
+			ctx.setLineDash([]);
+			ctx.lineWidth = 1;
+		};
+		// The other registers dim, the preview key's contour between them dashed, and the one that
+		// is drawn on with its points.
+		CONTOUR_KEYS.forEach((key, g) => {
+			if (g !== register) curve(contourCurve(patch.contour, key), '#60d0e055', 1.5);
+		});
+		curve(contourCurve(patch.contour, previewKey), '#fff8', 1, [4, 3]);
+		curve(contourCurve(patch.contour, CONTOUR_KEYS[register]), '#60d0e0', 2);
 		ctx.fillStyle = '#60d0e0';
 		for (const [j, f] of CONTOUR_FREQS.entries()) {
 			ctx.beginPath();
-			ctx.arc(x(f), y(patch.contour[j], h), 3, 0, 2 * Math.PI);
+			ctx.arc(x(f), y(patch.contour[register][j], h), 3, 0, 2 * Math.PI);
 			ctx.fill();
 		}
 	});
@@ -76,7 +90,7 @@
 		if (last < 0) [last, lastValue] = [j, v];
 		for (let k = Math.min(last, j); k <= Math.max(last, j); k++) {
 			const t = j === last ? 1 : (k - last) / (j - last);
-			patch.contour[k] = Math.round((lastValue + t * (v - lastValue)) * 2) / 2;
+			patch.contour[register][k] = Math.round((lastValue + t * (v - lastValue)) * 2) / 2;
 		}
 		[last, lastValue] = [j, v];
 	}

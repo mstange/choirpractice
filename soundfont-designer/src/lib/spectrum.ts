@@ -1,21 +1,42 @@
 // The tone's spectrum, for build.ts and the plots.
 import { eqCurve } from './dsp.ts';
-import { CONTOUR_FREQS, formantBands, type Patch } from './patch.ts';
+import { CONTOUR_FREQS, CONTOUR_KEYS, formantBands, type Patch } from './patch.ts';
 
-/** The contour's gain in dB at `f`, beyond its ends that of the nearest end. */
-export function contourCurve(contour: number[]) {
-	const last = CONTOUR_FREQS.length - 1;
+/**
+ * The two neighbours that `x` falls between on the increasing `points`, and the weight of the
+ * second; beyond the ends, the end.
+ */
+export function between(points: number[], x: number): [number, number, number] {
+	const last = points.length - 1;
+	if (last === 0 || x <= points[0]) return [0, 0, 0];
+	if (x >= points[last]) return [last, last, 0];
+	let i = 0;
+	while (x >= points[i + 1]) i++;
+	return [i, i + 1, (x - points[i]) / (points[i + 1] - points[i])];
+}
+
+export const CONTOUR_OCTAVES = CONTOUR_FREQS.map(Math.log2);
+
+/**
+ * The contour of `key`, between those of the registers on either side, and its gain in dB at `f`,
+ * in between its frequencies along the logarithm of the frequency.
+ */
+export function contourCurve(contour: number[][], key: number) {
+	const [a, b, t] = between(CONTOUR_KEYS, key),
+		row = contour[a].map((v, j) => v + t * (contour[b][j] - v));
 	return (f: number) => {
-		const x = Math.max(0, Math.min(last, 3 * Math.log2(f / CONTOUR_FREQS[0]))),
-			i = Math.min(last - 1, Math.floor(x));
-		return contour[i] + (x - i) * (contour[i + 1] - contour[i]);
+		const [i, k, u] = between(CONTOUR_OCTAVES, Math.log2(f));
+		return row[i] + u * (row[k] - row[i]);
 	};
 }
 
-/** The gain in dB of the EQ, the formants and the contour: what shapes the tone by frequency. */
-export function toneEq(p: Patch) {
+/**
+ * The gain in dB of the EQ, the formants and the contour at `key`: what shapes the tone by
+ * frequency.
+ */
+export function toneEq(p: Patch, key: number) {
 	const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
-		contour = contourCurve(p.contour);
+		contour = contourCurve(p.contour, key);
 	return (f: number) => eq(f) + contour(f);
 }
 
@@ -26,15 +47,15 @@ export function toneEq(p: Patch) {
 export const NYQUIST = 0.45;
 
 /**
- * The harmonics of the tone at fundamental `f0`: their frequency and amplitude. Every key is as
+ * The harmonics of the tone of `key` at fundamental `f0`: their frequency and amplitude. Every key is as
  * loud at full dynamics: the harmonics have a total power of 1 after the EQ, the formants, the
  * contour and the low-pass filter (which the synthesizer applies), so that these change the timbre and the level
  * the loudness.
  */
-export function toneHarmonics(p: Patch, f0: number, sampleRate: number) {
+export function toneHarmonics(p: Patch, key: number, f0: number, sampleRate: number) {
 	const { tilt, even, harmonics, maxHarmonic } = p.tone;
 	const count = Math.min(maxHarmonic, Math.floor((NYQUIST * sampleRate) / f0));
-	const eq = toneEq(p),
+	const eq = toneEq(p, key),
 		lp = lowpass(p, f0);
 	const list = Array.from({ length: count }, (_, i) => {
 		const freq = (i + 1) * f0;

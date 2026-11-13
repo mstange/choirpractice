@@ -15,8 +15,8 @@ import {
 	type ModulatorCurveType
 } from 'spessasynth_core';
 import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
-import { formantBands, type Patch } from './patch.ts';
-import { lowpass, noiseShape, NYQUIST, toneHarmonics } from './spectrum.ts';
+import type { Patch } from './patch.ts';
+import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
 
 /** The lowest and highest key that get a sample; the outer zones reach the ends of the keyboard. */
 export const LOW_KEY = 33,
@@ -103,9 +103,9 @@ function noiseSpectrum(p: Patch, n: number) {
 	const { noiseLow, noiseHigh } = p.tone,
 		sr = p.output.sampleRate,
 		bin = sr / n;
-	const key = JSON.stringify(['noise', noiseLow, noiseHigh, p.eq, p.formant, sr, n]);
+	const key = JSON.stringify(['noise', noiseLow, noiseHigh, p.eq, p.formant, p.contour, sr, n]);
 	return cached(key, () => {
-		const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
+		const eq = toneEq(p),
 			amps = new Float64Array(Math.floor((NYQUIST * sr) / bin));
 		for (let k = 1; k < amps.length; k++) {
 			const shape = noiseShape(k * bin, noiseLow, noiseHigh);
@@ -290,6 +290,7 @@ export function buildBank(p: Patch, program: number): Built {
 			{ ...p.tone, level: 0, width: 0 },
 			p.formant,
 			p.eq,
+			p.contour,
 			p.filter,
 			sampleRate,
 			loop,

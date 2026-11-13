@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { eqCurve, keyFreq } from '../dsp.ts';
-	import { HARMONICS, formantBands, type Patch } from '../patch.ts';
-	import { lowpass, NYQUIST } from '../spectrum.ts';
+	import { keyFreq } from '../dsp.ts';
+	import { HARMONICS, type Patch } from '../patch.ts';
+	import { lowpass, NYQUIST, toneEq } from '../spectrum.ts';
 	import { prepare } from './canvas.ts';
 
 	let { patch, previewKey }: { patch: Patch; previewKey: number } = $props();
@@ -14,11 +14,11 @@
 
 	/**
 	 * Per harmonic of the preview key: its level in dB before the loudness is normalized, with the
-	 * EQ, formants and the filter at full dynamics, and that level without its own offset.
+	 * EQ, formants, contour and the filter at full dynamics, and that level without its own offset.
 	 */
 	const levels = $derived.by(() => {
 		const f0 = keyFreq(previewKey),
-			eq = eqCurve([...patch.eq, ...formantBands(patch.formant)]),
+			eq = toneEq(patch),
 			lp = lowpass(patch, f0),
 			{ tilt, even, harmonics, maxHarmonic } = patch.tone;
 		return Array.from({ length: HARMONICS }, (_, i) => {

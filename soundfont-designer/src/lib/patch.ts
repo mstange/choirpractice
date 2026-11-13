@@ -42,6 +42,11 @@ export interface Patch {
 	formant: { vowel: Vowel; amount: number; width: number };
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
+	/**
+	 * dB added to the tone, harmonics and breath noise, at CONTOUR_FREQS, in between along the
+	 * logarithm of the frequency, at the same frequencies on every key.
+	 */
+	contour: number[];
 	/** The tone's volume envelope, in ms and dB. */
 	env: { attack: number; hold: number; decay: number; sustain: number; release: number };
 	/** At the start of each note, the tone is brighter and can start flat, for `time` ms. */
@@ -91,6 +96,9 @@ export interface Patch {
 
 export const HARMONICS = 32;
 
+/** Third octaves from 50 Hz to 12.7 kHz. */
+export const CONTOUR_FREQS = Array.from({ length: 25 }, (_, i) => 50 * 2 ** (i / 3));
+
 export const DEFAULT_PATCH: Patch = {
 	name: 'Practice Voice',
 	tone: {
@@ -113,6 +121,7 @@ export const DEFAULT_PATCH: Patch = {
 		{ type: 'peak', freq: 3000, gain: 3, q: 1.2 },
 		{ type: 'highshelf', freq: 8000, gain: -3, q: 0.7 }
 	],
+	contour: Array(CONTOUR_FREQS.length).fill(0),
 	env: { attack: 25, hold: 0, decay: 300, sustain: -3, release: 180 },
 	onset: { time: 90, bright: 1200, scoop: 0 },
 	vibrato: { rate: 5.3, depth: 12, delay: 450 },

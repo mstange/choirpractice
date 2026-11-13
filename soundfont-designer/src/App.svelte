@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Builder } from './lib/builder.svelte.ts';
-	import { DESIGNED, type DesignerSynth } from './lib/designer-synth.ts';
-	import { complete, type EqType, type Patch, type Vowel } from './lib/patch.ts';
+	import { DESIGNED, INSTRUMENTS, type DesignerSynth } from './lib/designer-synth.ts';
+	import { match } from './lib/matcher.ts';
+	import { CONTOUR_FREQS, complete, type EqType, type Patch, type Vowel } from './lib/patch.ts';
 	import { STARTING_POINTS } from './lib/presets.ts';
+	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
 	import Keyboard from './lib/ui/Keyboard.svelte';
 	import Player from './lib/ui/Player.svelte';
@@ -52,6 +54,24 @@
 	async function exportSf2() {
 		const file = await builder.export($state.snapshot(patch) as Patch, program);
 		download(`${slug(patch.name)}-${program}.sf2`, file, 'audio/x-soundfont');
+	}
+
+	/** The instrument that Match measures, and what the last match did. */
+	let matchProgram = $state(52),
+		matching = $state(false),
+		matchResult = $state('');
+	async function matchContour() {
+		matching = true;
+		const label = INSTRUMENTS.find(([p]) => p === matchProgram)![1];
+		const r = await match($state.snapshot(patch) as Patch, matchProgram);
+		matching = false;
+		if ('error' in r) matchResult = `Couldn't match: ${r.error}`;
+		else {
+			patch.contour = r.contour;
+			matchResult =
+				`Matched to ${label}: the harmonics were ${r.before.toFixed(1)} dB (rms) from ` +
+				`${label}'s, and are now about ${r.after.toFixed(1)} dB.`;
+		}
 	}
 
 	async function importJson(e: Event & { currentTarget: HTMLInputElement }) {
@@ -226,6 +246,29 @@
 					{/each}
 				</tbody>
 			</table>
+		</section>
+
+		<section>
+			<h2>Tone: spectral contour</h2>
+			<Contour {patch} {previewKey} />
+			<p class="hint">
+				Raises and lowers the tone, harmonics and breath noise, at the same frequencies on every
+				key; draw to change it. Match measures the sustain of an instrument and of this patch at mf,
+				on keys from E2 to E5, and sets the contour that brings this patch's harmonics nearest the
+				instrument's.
+			</p>
+			<div class="buttons">
+				<select bind:value={matchProgram}>
+					{#each INSTRUMENTS.filter(([p]) => p !== DESIGNED) as [p, label] (p)}<option value={p}
+							>{label}</option
+						>{/each}
+				</select>
+				<button disabled={matching} onclick={matchContour}
+					>{matching ? 'Matching…' : 'Match'}</button
+				>
+				<button onclick={() => (patch.contour = Array(CONTOUR_FREQS.length).fill(0))}>Flat</button>
+			</div>
+			{#if matchResult}<p class="hint">{matchResult}</p>{/if}
 		</section>
 
 		<section>

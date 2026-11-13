@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
+import { MATCH_KEYS, fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
 import { DEFAULT_PATCH, complete } from '../src/lib/patch.ts';
 import { Engine } from '../src/lib/synth/synth-engine.ts';
 
@@ -232,17 +233,37 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 }
 
 // Against Choir Aahs, at the same dynamics.
+let aahs: BasicSoundBank | null = null;
 try {
-	const aahs = SoundBankLoader.fromArrayBuffer(
-		readFileSync(`${soundfonts}52.sf3`).buffer as ArrayBuffer
-	);
+	aahs = SoundBankLoader.fromArrayBuffer(readFileSync(`${soundfonts}52.sf3`).buffer as ArrayBuffer);
+} catch (e) {
+	console.log(`(no comparison with Choir Aahs: ${(e as Error).message})`);
+}
+if (aahs) {
 	for (const key of [45, 60, 72]) {
 		const a = sustain(render(aahs, 52, key, 64, 64, 4)),
 			c = sustain(render(custom, PROGRAM, key, 64, 64, 4));
 		console.log(`key ${key}: Choir Aahs ${fmt(a)} dB, patch ${fmt(c)} dB`);
 	}
-} catch (e) {
-	console.log(`(no comparison with Choir Aahs: ${(e as Error).message})`);
+
+	// Matching the contour brings the harmonics nearer Choir Aahs's, measured again, about as near
+	// as the fit expects, and keeps the loudness.
+	const matched = matchContour(aahs, 52, DEFAULT_PATCH),
+		theirs = MATCH_KEYS.map((key) => measure(aahs, 52, key)),
+		ours = patchBank(complete({ ...DEFAULT_PATCH, contour: matched.contour })),
+		again = fitContour(
+			theirs,
+			MATCH_KEYS.map((key) => measure(ours, 0, key)),
+			MATCH_KEYS
+		).before;
+	check(
+		again < matched.before - 2 && again < matched.after + 1,
+		`matched to Choir Aahs: ${matched.before.toFixed(1)} → ${again.toFixed(1)} dB rms ` +
+			`(fitted ${matched.after.toFixed(1)})`
+	);
+	const level = sustain(render(ours, 0, 60, 64, 64, 4)),
+		unmatched = sustain(render(custom, PROGRAM, 60, 64, 64, 4));
+	check(Math.abs(level - unmatched) < 1, `as loud matched (${fmt(level)} vs ${fmt(unmatched)} dB)`);
 }
 
 process.exit(failed ? 1 : 0);

@@ -24,6 +24,7 @@
 		"vite": "^8.3.0"
 	},
 	"dependencies": {
-		"spessasynth_core": "^4.4.7"
+		"spessasynth_core": "^4.4.7",
+		"wasm-media-encoders": "^0.7.0"
 	}
 }

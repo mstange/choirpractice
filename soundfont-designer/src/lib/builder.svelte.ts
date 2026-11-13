@@ -9,22 +9,29 @@ export class Builder {
 	built = $state.raw<Built | null>(null);
 	error = $state('');
 	#worker = new Worker(new URL('./build-worker.ts', import.meta.url), { type: 'module' });
-	#waiting: Omit<BuildRequest, 'id'> | null = null;
+	#waiting: { patch: Patch; program: number; key: number } | null = null;
 	#busy = false;
 	#id = 0;
-	/** The export that waits for its file. */
-	#exports = new Map<number, (file: ArrayBuffer) => void>();
+	/** The exports that wait for their files, which don't wait for builds, nor builds for them. */
+	#exports = new Map<
+		number,
+		{ resolve: (file: ArrayBuffer) => void; reject: (e: Error) => void }
+	>();
 
 	constructor() {
 		this.#worker.onmessage = ({ data }: MessageEvent<BuildReply>) => {
-			const done = this.#exports.get(data.id);
+			const exported = this.#exports.get(data.id);
+			if (exported) {
+				this.#exports.delete(data.id);
+				if ('exported' in data) exported.resolve(data.exported);
+				else exported.reject(new Error('error' in data ? data.error : 'not exported'));
+				return;
+			}
 			if ('error' in data) this.error = data.error;
-			else if (done) done(data.built.file);
-			else {
+			else if ('built' in data) {
 				this.error = '';
 				this.built = data.built;
 			}
-			this.#exports.delete(data.id);
 			this.#busy = false;
 			this.#next();
 		};
@@ -36,11 +43,11 @@ export class Builder {
 		this.#next();
 	}
 
-	/** The SF2 file of `patch`, with its preset at `program`. */
+	/** The SF3 file of `patch`, with its preset at `program`. */
 	export(patch: Patch, program: number): Promise<ArrayBuffer> {
 		const id = this.#id++;
-		this.#worker.postMessage({ id, patch, program, key: 60 } satisfies BuildRequest);
-		return new Promise((resolve) => this.#exports.set(id, resolve));
+		this.#worker.postMessage({ id, patch, program, export: true } satisfies BuildRequest);
+		return new Promise((resolve, reject) => this.#exports.set(id, { resolve, reject }));
 	}
 
 	#next() {

@@ -1,6 +1,6 @@
 # Soundfont Designer
 
-A web page for designing an instrument for [choirpractice-app](../choirpractice-app), synthesized into a SoundFont 2 file, while listening to it in the choir app's pieces.
+A web page for designing an instrument for [choirpractice-app](../choirpractice-app), synthesized into a SoundFont file, while listening to it in the choir app's pieces.
 
 MS Basic's instruments are a poor fit for following a part: the piano has a clear attack but dies away during long notes, and Choir Aahs sustains but has almost no attack. Neither follows a crescendo during a held note, because MuseScore exports the dynamics, hairpins included, as CC2 (breath controller), which no default SF2 modulator responds to. The velocity only says how loud a note starts.
 
@@ -18,7 +18,7 @@ npm run dev
 
 The page plays the pieces of the choir app's `media/` directory, `../choirpractice-app/media` unless `MEDIA` names another (`MEDIA=/path/to/media npm run dev`). It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
 
-- `npm test` builds the default patch, writes it as SF2, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
+- `npm test` builds the default patch, writes it as SF2 and SF3, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
 - `node scripts/spectrum.ts [--match] [preset or patch JSON] [keys]` compares the sustain of MS Basic's Choir Aahs with a patch's, as spessasynth renders them: per harmonic its level, the noise beside it and its spread in cents, and how a strong harmonic moves over time. With `--match`, it first matches the patch's contour to Choir Aahs, and measures how near that brought it.
 - `npm run check` type-checks, `npm run format` formats with Prettier.
 
@@ -30,11 +30,11 @@ The page plays the pieces of the choir app's `media/` directory, `../choirpracti
 - **Spectral contour:** one for E2 and one for E5, mixed on the keys in between. Draw on either, or let Match fit both to the sustain of one of MS Basic's instruments; they change the timbre, not the loudness.
 - **Note plot:** the level of the preview key over time, as the synthesizer renders the built file: at MuseScore's p, mf and ff velocities, and swelling from p to ff, released at the dashed line.
 - **Saving:** the patch being edited is kept in `localStorage`. Save keeps it by name, Export JSON and Import JSON move patches between browsers. Start from offers a few patches to begin with (`src/lib/presets.ts`).
-- **Export SF2** writes the file, with its one preset at the program number beside it.
+- **Export SF3** writes the file, with its one preset at the program number beside it, and its samples compressed to Ogg Vorbis (quality 5), which takes about a second.
 
 ## Putting an exported instrument into the choir app
 
-The choir app fetches `media/soundfont/<program>.sf3` for each General MIDI program; the loader reads the file's content, so an uncompressed SF2 file under that name works.
+The choir app fetches `media/soundfont/<program>.sf3` for each General MIDI program.
 
 1. Export with a program that MS Basic's files in `media/soundfont/` don't use, such as 54 (Synth Voice).
 2. Copy the file to `media/soundfont/54.sf3` in the choir app.
@@ -57,11 +57,11 @@ The choir app fetches `media/soundfont/<program>.sf3` for each General MIDI prog
   - take a bank made in memory (`addBank()`), and replace a bank under the same id without resetting the synthesizer: it swaps the bank in spessasynth's sound bank list and calls `refreshPresets()`, so the channels keep their controllers. Adding a bank with `addSoundBank()` resets all controllers and stops all notes, so the engine seeks again after adding a bank while playing, which restores the score's controllers;
   - play MIDI messages at once (`send()`), for the keyboard, on channel 16;
   - load a program's samples for given notes (the keyboard's), not only the score's.
-- **Building:** `src/lib/build-worker.ts` builds, writes the SF2 file and reads it back, so that the page plays the file it exports, and renders the preview note with a `SpessaSynthProcessor` of its own. `src/lib/builder.svelte.ts` keeps one build running at a time and drops all but the newest waiting patch. Samples are cached by the parameters they depend on, so most changes don't synthesize anything.
+- **Building:** `src/lib/build-worker.ts` builds, writes the SF2 file and reads it back, so that the page plays the file as written, and renders the preview note with a `SpessaSynthProcessor` of its own. The page plays the samples uncompressed: compressing them would make each rebuild about half a second slower. Export writes the file again with its samples compressed (`src/lib/vorbis.ts`): browsers have no Vorbis encoder, so it uses libvorbis compiled to WebAssembly (`wasm-media-encoders`), loaded only when exporting. Decoded, the samples keep their lengths and loops; `npm test` checks that, and that the SF3 file plays as loud as the SF2. `src/lib/builder.svelte.ts` keeps one build running at a time and drops all but the newest waiting patch. Samples are cached by the parameters they depend on, so most changes don't synthesize anything.
 
 ## Limitations
 
-- **File size:** the samples are 16-bit PCM, about 4 MB with the defaults (7 MB in stereo), against 0.65 MB for MS Basic's Ogg Vorbis-compressed Choir Aahs. Shorter loops, a lower sample rate or a wider key spacing make it smaller. Writing SF3 needs an Ogg Vorbis encoder, which spessasynth_core doesn't include.
+- **Compression is heard only in the export:** the page plays the samples as 16-bit PCM (about 4 MB with the defaults), the exported file has them in Ogg Vorbis (0.67 MB, against 0.65 MB for MS Basic's Choir Aahs). How the compression sounds, around the loop points in particular, has only been measured, not listened to: the error at the start and end of a loop is a few dB above the error in its middle, and the step across the loop point no larger than the steps elsewhere.
 - **Loops are static:** apart from the ensemble's shimmer, vibrato and tremolo, each tone sample repeats exactly every Loop seconds.
 - **Tenor formants only:** the formant table is a tenor's. Sopranos' formants are higher, but their harmonics are so far apart that the formants matter less.
 - **Unisons** of several parts on the same key start the same sample at the same place, so they add up exactly rather than like separate voices.

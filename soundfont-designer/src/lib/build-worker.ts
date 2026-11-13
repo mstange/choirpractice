@@ -1,12 +1,17 @@
 // Builds a patch's sound bank off the main thread, writes it as an SF2 file and reads that back,
-// so that the page plays exactly the file it exports, and renders a note of it at a few dynamics
-// for the envelope plot.
+// so that the page plays the file as written, and renders a note of it at a few dynamics for the
+// envelope plot. For exporting, it writes the file as SF3 instead, its samples compressed, which
+// takes longer than building.
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from './build.ts';
 import type { Patch } from './patch.ts';
 import type { DecodedSample } from './synth/synth-engine.ts';
+import { compress } from './vorbis.ts';
 
-export type BuildRequest = { id: number; patch: Patch; program: number; key: number };
+/** A build for playing, with a preview of `key`, or for exporting. */
+export type BuildRequest = { id: number; patch: Patch; program: number } & (
+	{ key: number } | { export: true }
+);
 
 /** The level over time of a note rendered at some dynamics. */
 export type Curve = { label: string; db: Float32Array };
@@ -28,7 +33,9 @@ export type Built = {
 	preview: Preview;
 	ms: number;
 };
-export type BuildReply = { id: number } & ({ built: Built } | { error: string });
+export type BuildReply = { id: number } & (
+	{ built: Built } | { exported: ArrayBuffer } | { error: string }
+);
 
 const RATE = 48000,
 	STEP = 0.01,
@@ -85,10 +92,18 @@ function render(
 	return db;
 }
 
-onmessage = async ({ data: { id, patch, program, key } }: MessageEvent<BuildRequest>) => {
+onmessage = async ({ data }: MessageEvent<BuildRequest>) => {
+	const { id, patch, program } = data;
 	try {
 		const start = performance.now();
 		const { bank, clipped } = buildBank(patch, program);
+		if ('export' in data) {
+			await compress(bank);
+			const exported = bank.writeSF2({ writeDefaultModulators: true });
+			postMessage({ id, exported } satisfies BuildReply, [exported]);
+			return;
+		}
+		const { key } = data;
 		const file = bank.writeSF2({ writeDefaultModulators: true });
 		await BasicSoundBank.ready;
 		const read = SoundBankLoader.fromArrayBuffer(file.slice(0));

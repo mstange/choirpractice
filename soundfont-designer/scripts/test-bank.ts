@@ -10,6 +10,7 @@ import { buildBank } from '../src/lib/build.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
 import { DEFAULT_PATCH, MATCH_KEYS, complete } from '../src/lib/patch.ts';
 import { Engine } from '../src/lib/synth/synth-engine.ts';
+import { compress } from '../src/lib/vorbis.ts';
 
 const RATE = 48000,
 	PROGRAM = 54;
@@ -248,6 +249,34 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 		engine.synth.midiChannels[0].midiControllers[7] >> 7 === 40,
 		"adding a bank while playing keeps the score's controllers"
 	);
+}
+
+// Exported as SF3: the samples decode to their lengths, keep their loops, and play as loud.
+{
+	const t = performance.now();
+	await compress(bank);
+	const sf3 = bank.writeSF2({ writeDefaultModulators: true });
+	const read = SoundBankLoader.fromArrayBuffer(sf3);
+	console.log(
+		`SF3 in ${(performance.now() - t).toFixed(0)} ms: ${(sf3.byteLength / 1e6).toFixed(2)} MB`
+	);
+	check(
+		read.samples.every((s, i) => {
+			const pcm = custom.samples[i];
+			return (
+				s.isCompressed &&
+				s.getAudioData().length === pcm.getAudioData().length &&
+				s.loopStart === pcm.loopStart &&
+				s.loopEnd === pcm.loopEnd
+			);
+		}),
+		'SF3 samples keep their lengths and loops'
+	);
+	for (const key of [45, 60, 72]) {
+		const a = sustain(render(custom, PROGRAM, key, 64, 64, 4)),
+			b = sustain(render(read, PROGRAM, key, 64, 64, 4));
+		check(Math.abs(a - b) < 0.3, `key ${key}: as loud in SF3 (${fmt(b)} vs ${fmt(a)} dB)`);
+	}
 }
 
 // Against Choir Aahs, at the same dynamics.

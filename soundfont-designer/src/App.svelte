@@ -59,9 +59,19 @@
 		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 	}
 
-	async function exportSf2() {
-		const file = await builder.export($state.snapshot(patch) as Patch, program);
-		download(`${slug(patch.name)}-${program}.sf2`, file, 'audio/x-soundfont');
+	let exporting = $state(false),
+		exportError = $state('');
+	async function exportSf3() {
+		exporting = true;
+		exportError = '';
+		try {
+			const file = await builder.export($state.snapshot(patch) as Patch, program);
+			download(`${slug(patch.name)}-${program}.sf3`, file, 'audio/x-soundfont');
+		} catch (e) {
+			exportError = `Export failed: ${(e as Error).message}`;
+		} finally {
+			exporting = false;
+		}
 	}
 
 	/** The register of the contour that is drawn on. */
@@ -139,7 +149,10 @@
 	<label title="The General MIDI program of the preset in the exported file">
 		Program <input type="number" min="0" max="127" bind:value={program} />
 	</label>
-	<button class="on" onclick={exportSf2}>Export SF2</button>
+	{#if exportError}<span class="warn">{exportError}</span>{/if}
+	<button class="on" onclick={exportSf3} disabled={exporting}>
+		{exporting ? 'Compressing…' : 'Export SF3'}
+	</button>
 </header>
 
 <main>

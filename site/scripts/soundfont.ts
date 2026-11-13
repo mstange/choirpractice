@@ -1,11 +1,12 @@
 // Writes media/soundfont/<program>.sf3: MuseScore's MS Basic soundfont, one file per General MIDI
 // program, for every program that a piece in media/ plays (its score.mid) or that the instrument
-// menu offers. The samples keep their Ogg Vorbis compression. Run by tools/build.sh.
+// menu offers, except for OWN_PROGRAMS, whose files are checked in. The samples keep their Ogg Vorbis
+// compression. Run by tools/build.sh.
 //
 // Usage: node site/scripts/soundfont.ts
 import { copyFileSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
-import { INSTRUMENTS, soundfontFile } from '../src/lib/instruments.ts';
+import { INSTRUMENTS, OWN_PROGRAMS, soundfontFile } from '../src/lib/instruments.ts';
 import { parseMidi } from '../src/lib/midi.ts';
 
 const SOURCE =
@@ -28,7 +29,7 @@ for (const path of globSync(`${media}*/*/score.mid`)) {
 
 const source = SoundBankLoader.fromArrayBuffer(read(SOURCE));
 mkdirSync(out, { recursive: true });
-for (const program of [...programs].sort((a, b) => a - b)) {
+for (const program of [...programs].filter((p) => !OWN_PROGRAMS.has(p)).sort((a, b) => a - b)) {
 	const preset = source.presets.find(
 		(p) => p.program === program && p.bankMSB === 0 && p.bankLSB === 0 && !p.isGMGSDrum
 	);

@@ -312,10 +312,10 @@
 			<Contour {patch} {previewKey} register={contourRegister} />
 			<p class="hint">
 				Raises and lowers the tone, harmonics and breath noise, at fixed frequencies. There is a
-				contour for E2 and one for E5, and the keys in between mix them: draw on either; the dashed
-				line is the preview key's. Match measures the sustain of an instrument and of this patch at
-				mf, on keys from E2 to E5, and sets the contour that brings this patch's harmonics nearest
-				the instrument's.
+				contour for E2, A#3 and E5, and the keys in between mix their neighbours: draw on any; the
+				dashed line is the preview key's. Match measures the sustain of an instrument and of this
+				patch at mf, on every third key from E2 to G5, and sets the contour that brings this patch's
+				harmonics nearest the instrument's.
 			</p>
 			<div class="buttons">
 				Draw

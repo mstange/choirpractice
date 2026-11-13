@@ -112,10 +112,13 @@ export const HARMONICS = 32;
 
 /** Third octaves from 50 Hz to 12.7 kHz. */
 export const CONTOUR_FREQS = Array.from({ length: 25 }, (_, i) => 50 * 2 ** (i / 3));
-/** The keys of the contour's registers: E2 and E5. */
-export const CONTOUR_KEYS = [40, 76];
-/** The keys that Match fits the contour on, across the vocal parts' range. */
-export const MATCH_KEYS = [40, 46, 52, 58, 64, 70, 76];
+/** The keys of the contour's registers: E2, A#3 and E5. */
+export const CONTOUR_KEYS = [40, 58, 76];
+/**
+ * The keys that Match fits the contour on, across the vocal parts' range: every third key, one in
+ * each of Choir Aahs's zones.
+ */
+export const MATCH_KEYS = Array.from({ length: 14 }, (_, i) => 40 + 3 * i);
 
 export const DEFAULT_PATCH: Patch = {
 	name: 'Practice Voice',
@@ -173,9 +176,14 @@ export function complete(p: Partial<Patch>): Patch {
 			v && typeof v === 'object' && !Array.isArray(v)
 				? { ...(d[k] as object), ...structuredClone(v) }
 				: structuredClone(v);
-	// A contour of one register, as patches had it at first, is every register's.
+	// A contour of one register, as patches had it at first, is every register's; one of E2 and E5
+	// has A#3 halfway between them.
 	const contour = d.contour as number[] | number[][];
 	if (typeof contour[0] === 'number') d.contour = CONTOUR_KEYS.map(() => [...contour]);
+	else if (contour.length === 2) {
+		const [low, high] = contour as number[][];
+		d.contour = [low, low.map((v, j) => (v + high[j]) / 2), high];
+	}
 	return d as unknown as Patch;
 }
 

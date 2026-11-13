@@ -19,6 +19,7 @@ npm run dev
 The page plays the pieces of the choir app's `media/` directory, `../choirpractice-app/media` unless `MEDIA` names another (`MEDIA=/path/to/media npm run dev`). It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
 
 - `npm test` builds the default patch, writes it as SF2, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
+- `node scripts/spectrum.ts [preset or patch JSON] [keys]` compares the sustain of MS Basic's Choir Aahs with a patch's, as spessasynth renders them: per harmonic its level, the noise beside it and its spread in cents, and how a strong harmonic moves over time.
 - `npm run check` type-checks, `npm run format` formats with Prettier.
 
 ## Using it

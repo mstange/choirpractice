@@ -91,6 +91,22 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 		}
 		for (const [k, pk] of power) add(k, Math.sqrt(pk));
 	});
+	const { aperiodic, aperiodicSlope, aperiodicTilt } = p.tone;
+	if (aperiodic > -90) {
+		// Between neighbouring harmonics, from half the fundamental to half a harmonic above the
+		// top one, noise whose power in all is 10^(level/10) times theirs, along the logarithm of
+		// their power, tilted by frequency; below the fundamental, the fundamental's.
+		const level = aperiodic + (aperiodicSlope * (key - 60)) / 12,
+			perBin = (10 ** (level / 10) * bin) / f,
+			db = harmonics.map((h) => 20 * Math.log10(h.amp));
+		const top = Math.min(n / 2, Math.round((harmonics.length + 0.5) * (f / bin)));
+		for (let k = Math.round(f / 2 / bin); k < top; k++) {
+			const x = Math.max(0, (k * bin) / f - 1),
+				i = Math.min(db.length - 1, Math.floor(x)),
+				d = db[i] + (x - i) * ((db[i + 1] ?? db[i]) - db[i]);
+			add(k, Math.sqrt(perBin * 10 ** ((d + aperiodicTilt * Math.log2((k * bin) / 1000)) / 10)));
+		}
+	}
 	if (noise > -90) {
 		// A power of 10^(noise/10) against the harmonics' 1, as they come out of the filter.
 		const contour = contourCurve(p.contour, key),

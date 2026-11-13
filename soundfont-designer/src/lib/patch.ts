@@ -42,6 +42,14 @@ export interface Patch {
 		noise: number;
 		noiseLow: number;
 		noiseHigh: number;
+		/**
+		 * Noise between the harmonics, shaped like them: the noise between two neighbouring
+		 * harmonics, in dB against them, at 1 kHz on C4 (-90 is none), how much that changes per
+		 * octave of key, and per octave of frequency.
+		 */
+		aperiodic: number;
+		aperiodicSlope: number;
+		aperiodicTilt: number;
 	};
 	/** Vocal formants, as peaks of an EQ on the tone. */
 	formant: { vowel: Vowel; amount: number; width: number };
@@ -123,7 +131,10 @@ export const DEFAULT_PATCH: Patch = {
 		width: 0,
 		noise: -32,
 		noiseLow: 1500,
-		noiseHigh: 7000
+		noiseHigh: 7000,
+		aperiodic: -90,
+		aperiodicSlope: 0,
+		aperiodicTilt: 0
 	},
 	formant: { vowel: 'a', amount: 0.6, width: 2 },
 	eq: [

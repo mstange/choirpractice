@@ -220,6 +220,30 @@
 				title="-90 is off"
 			/>
 			<Slider
+				label="Aperiodic"
+				bind:value={patch.tone.aperiodic}
+				min={-90}
+				max={0}
+				unit="dB"
+				title="Noise between the harmonics, shaped like them: between two neighbours, against them, at 1 kHz on C4; -90 is off"
+			/>
+			<Slider
+				label="Aperiodic slope"
+				bind:value={patch.tone.aperiodicSlope}
+				min={-24}
+				max={12}
+				unit="dB/oct"
+				title="How much the aperiodic noise changes per octave of key"
+			/>
+			<Slider
+				label="Aperiodic tilt"
+				bind:value={patch.tone.aperiodicTilt}
+				min={-12}
+				max={12}
+				unit="dB/oct"
+				title="How much the aperiodic noise changes against the harmonics per octave of frequency, from 1 kHz"
+			/>
+			<Slider
 				label="Noise from"
 				bind:value={patch.tone.noiseLow}
 				min={50}

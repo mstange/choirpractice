@@ -11,10 +11,12 @@ import {
 	ModulatorCurveTypes,
 	ModulatorSource,
 	SampleTypes,
-	type BasicZone
+	type BasicZone,
+	type ModulatorCurveType
 } from 'spessasynth_core';
 import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
 import { formantBands, type Patch } from './patch.ts';
+import { lowpass, noiseShape, NYQUIST, toneHarmonics } from './spectrum.ts';
 
 /** The lowest and highest key that get a sample; the outer zones reach the ends of the keyboard. */
 export const LOW_KEY = 33,
@@ -26,9 +28,6 @@ export const LOW_KEY = 33,
 const REF = 0.27;
 /** Samples are stored at this peak; the zone's attenuation brings them to their level. */
 const PEAK = 0.9;
-/** Harmonics stay below this fraction of the sample rate, so that playing a zone's highest key
- * with vibrato doesn't alias. */
-const NYQUIST = 0.45;
 
 export type Zone = { root: number; min: number; max: number };
 
@@ -36,44 +35,15 @@ export type Zone = { root: number; min: number; max: number };
 export function zones(spacing: number): Zone[] {
 	const list: Zone[] = [];
 	for (let root = LOW_KEY; root < HIGH_KEY + spacing; root += spacing)
-		list.push({ root, min: root - Math.floor(spacing / 2), max: root + Math.ceil(spacing / 2) - 1 });
+		list.push({
+			root,
+			min: root - Math.floor(spacing / 2),
+			max: root + Math.ceil(spacing / 2) - 1
+		});
 	list[0].min = 0;
 	list[list.length - 1].max = 127;
 	return list;
 }
-
-/**
- * The harmonics of the tone at fundamental `f0`: their frequency and amplitude. Every key is as
- * loud at full dynamics: the harmonics have a total power of 1 after the EQ, the formants and the
- * low-pass filter (which the synthesizer applies), so that these change the timbre and the level
- * the loudness.
- */
-export function toneHarmonics(p: Patch, f0: number, sampleRate: number) {
-	const { tilt, even, harmonics, maxHarmonic } = p.tone;
-	const count = Math.min(maxHarmonic, Math.floor((NYQUIST * sampleRate) / f0));
-	const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
-		lp = lowpass(p, f0);
-	const list = Array.from({ length: count }, (_, i) => {
-		const freq = (i + 1) * f0;
-		const db = tilt * Math.log2(i + 1) + (i % 2 ? even : 0) + (harmonics[i] ?? 0) + eq(freq);
-		return { freq, amp: 10 ** (db / 20) };
-	});
-	const norm = Math.sqrt(list.reduce((s, h) => s + (h.amp * lp(h.freq)) ** 2, 0));
-	for (const h of list) h.amp /= norm;
-	return list;
-}
-
-/** The gain of the tone's low-pass filter at full dynamics, for a zone at `f0`. */
-export function lowpass(p: Patch, f0: number) {
-	if (p.filter.harmonic >= 64) return () => 1;
-	const fc = f0 * p.filter.harmonic,
-		q = Math.SQRT1_2 * 10 ** (p.filter.q / 20);
-	return (f: number) => 1 / Math.sqrt((1 - (f / fc) ** 2) ** 2 + (f / (fc * q)) ** 2);
-}
-
-/** The band of the breath noise, a gentle band-pass: its gain at `f`. */
-const noiseShape = (f: number, low: number, high: number) =>
-	1 / Math.sqrt((1 + (low / f) ** 4) * (1 + (f / high) ** 4));
 
 /**
  * The tone's sample for `key`: a loop of a power-of-two length, built as a spectrum and turned
@@ -99,27 +69,44 @@ export function toneSample(p: Patch, key: number) {
 	const { voices, detune, noise, noiseLow, noiseHigh } = p.tone;
 	const harmonics = toneHarmonics(p, f, sr),
 		lp = lowpass(p, f);
-	for (let v = 0; v < voices; v++) {
-		const ratio = 2 ** ((voices === 1 ? 0 : detune * (v / (voices - 1) - 0.5)) / 1200);
-		for (const h of harmonics) add(Math.round((h.freq * ratio) / bin), h.amp / Math.sqrt(voices));
-	}
+	// The ensemble: each harmonic above the fundamental is split into `voices` partials, each
+	// detuned at random within ±detune/2. Detuned copies of the fundamental, the strongest partial,
+	// would beat into a throb of the whole note; the upper harmonics beat at unrelated rates, which
+	// shimmers but keeps the loudness steady.
+	harmonics.forEach((h, i) => {
+		const copies = i === 0 ? 1 : voices;
+		for (let v = 0; v < copies; v++) {
+			const cents = copies === 1 ? 0 : detune * (rand() - 0.5);
+			add(Math.round((h.freq * 2 ** (cents / 1200)) / bin), h.amp / Math.sqrt(copies));
+		}
+	});
 	if (noise > -90) {
 		// A power of 10^(noise/10) against the harmonics' 1, as they come out of the filter.
-		const kmax = Math.floor((NYQUIST * sr) / bin),
-			eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
-			amps = new Float64Array(kmax);
+		const amps = noiseSpectrum(p, n);
 		let power = 0;
-		for (let k = 1; k < kmax; k++) {
-			const shape = noiseShape(k * bin, noiseLow, noiseHigh);
-			if (shape < 1e-3) continue;
-			amps[k] = shape * 10 ** (eq(k * bin) / 20);
-			power += (amps[k] * lp(k * bin)) ** 2;
-		}
+		for (let k = 1; k < amps.length; k++) if (amps[k]) power += (amps[k] * lp(k * bin)) ** 2;
 		const scale = Math.sqrt(10 ** (noise / 10) / power);
-		for (let k = 1; k < kmax; k++) if (amps[k]) add(k, scale * amps[k]);
+		for (let k = 1; k < amps.length; k++) if (amps[k]) add(k, scale * amps[k]);
 	}
 	ifft(re, im);
 	return { data: Float32Array.from(re), correction: Math.round(1200 * Math.log2(f0 / f)) };
+}
+
+/** The breath noise's amplitude in each bin of an FFT of length `n`, the same for every key. */
+function noiseSpectrum(p: Patch, n: number) {
+	const { noiseLow, noiseHigh } = p.tone,
+		sr = p.output.sampleRate,
+		bin = sr / n;
+	const key = JSON.stringify(['noise', noiseLow, noiseHigh, p.eq, p.formant, sr, n]);
+	return cached(key, () => {
+		const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
+			amps = new Float64Array(Math.floor((NYQUIST * sr) / bin));
+		for (let k = 1; k < amps.length; k++) {
+			const shape = noiseShape(k * bin, noiseLow, noiseHigh);
+			if (shape >= 1e-3) amps[k] = shape * 10 ** (eq(k * bin) / 20);
+		}
+		return amps;
+	});
 }
 
 /**
@@ -207,14 +194,28 @@ function bandpass(x: Float32Array, freq: number, q: number, sampleRate: number) 
 	}
 }
 
+/**
+ * The samples made last, by what they depend on, so that changing the envelopes, modulators or
+ * levels needs no synthesis.
+ */
+const memo = new Map<string, unknown>();
+function cached<T>(key: string, make: () => T): T {
+	if (!memo.has(key)) {
+		// Enough for both layers of every zone, at the smallest spacing, a few times over.
+		if (memo.size > 1000) memo.clear();
+		memo.set(key, make());
+	}
+	return memo.get(key) as T;
+}
+
 /** Timecents of a time in seconds, for the envelope and LFO generators. */
 const timecents = (s: number) => Math.max(-12000, Math.round(1200 * Math.log2(Math.max(s, 0.001))));
 /** Absolute cents of a frequency, for filters and LFOs. */
 const absCents = (hz: number) => Math.round(1200 * Math.log2(hz / 8.176));
 
-const velocity = (curve: number) =>
+const velocity = (curve: ModulatorCurveType) =>
 	new ModulatorSource(ModulatorControllerSources.noteOnVelocity, curve, false, false, true);
-const breath = (curve: number) => new ModulatorSource(2, curve, true, false, true);
+const breath = (curve: ModulatorCurveType) => new ModulatorSource(2, curve, true, false, true);
 /**
  * A modulator that lowers its destination by `amount` at the source's minimum, and not at all at
  * its maximum. With the SF2 default's own source and destination it replaces the default.
@@ -230,7 +231,8 @@ function dynamics(zone: BasicZone, source: 'cc2' | 'velocity', range: number, br
 		lower(velocity(concave), G.initialAttenuation, source === 'velocity' ? range * 10 : 0)
 	);
 	const from = source === 'velocity' ? velocity : breath;
-	if (source === 'cc2') zone.modulators.push(lower(from(concave), G.initialAttenuation, range * 10));
+	if (source === 'cc2')
+		zone.modulators.push(lower(from(concave), G.initialAttenuation, range * 10));
 	if (brightness) zone.modulators.push(lower(from(linear), G.initialFilterFc, -brightness));
 }
 
@@ -276,17 +278,38 @@ export function buildBank(p: Patch, program: number): Built {
 	attack.name = `${p.name}: Attack`;
 	const toneGain = REF * 10 ** (p.tone.level / 20),
 		attackGain = REF * 10 ** ((p.tone.level + p.attack.level) / 20);
+	// What the samples depend on: not the levels, which the zones' attenuation sets.
+	const { sampleRate, loop, seed } = p.output;
+	const toneKey = JSON.stringify([
+			{ ...p.tone, level: 0 },
+			p.formant,
+			p.eq,
+			p.filter,
+			sampleRate,
+			loop,
+			seed
+		]),
+		attackKey = JSON.stringify([
+			{ ...p.attack, enabled: true, level: 0, velRange: 0 },
+			p.eq,
+			sampleRate,
+			seed
+		]);
 	for (const { root, min, max } of zones(p.output.spacing)) {
-		const t = toneSample(p, root);
-		const ts = store(`tone ${root}`, t.data, root, toneGain, true);
+		const t = cached(`tone ${root} ${toneKey}`, () => toneSample(p, root));
+		const ts = store(`tone ${root}`, t.data.slice(), root, toneGain, true);
 		ts.sample.pitchCorrection = t.correction;
 		const tz = tone.createZone(ts.sample);
 		tz.keyRange = { min, max };
 		tz.setGenerator(G.initialAttenuation, ts.attenuation);
 		if (p.filter.harmonic < 64)
-			tz.setGenerator(G.initialFilterFc, Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic)));
+			tz.setGenerator(
+				G.initialFilterFc,
+				Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic))
+			);
 		if (p.attack.enabled) {
-			const as = store(`attack ${root}`, attackSample(p, root), root, attackGain, false);
+			const data = cached(`attack ${root} ${attackKey}`, () => attackSample(p, root));
+			const as = store(`attack ${root}`, data.slice(), root, attackGain, false);
 			const az = attack.createZone(as.sample);
 			az.keyRange = { min, max };
 			az.setGenerator(G.initialAttenuation, as.attenuation);

@@ -1,9 +1,22 @@
 // FFT, biquad filters and a seeded random number generator, for build.ts and the plots.
 import type { EqBand } from './patch.ts';
 
+/** Per FFT length n: cos and sin of 2πj/n, for j < n/2. */
+const twiddles = new Map<number, [Float64Array, Float64Array]>();
+
 /** In-place inverse FFT without scaling, of a power-of-two length: x[n] = Σ X[k] e^(2πikn/N). */
 export function ifft(re: Float64Array, im: Float64Array) {
 	const n = re.length;
+	if (!twiddles.has(n)) {
+		const c = new Float64Array(n / 2),
+			s = new Float64Array(n / 2);
+		for (let j = 0; j < n / 2; j++) {
+			c[j] = Math.cos((2 * Math.PI * j) / n);
+			s[j] = Math.sin((2 * Math.PI * j) / n);
+		}
+		twiddles.set(n, [c, s]);
+	}
+	const [cos, sin] = twiddles.get(n)!;
 	for (let i = 1, j = 0; i < n; i++) {
 		let bit = n >> 1;
 		for (; j & bit; bit >>= 1) j ^= bit;
@@ -14,24 +27,21 @@ export function ifft(re: Float64Array, im: Float64Array) {
 		}
 	}
 	for (let len = 2; len <= n; len <<= 1) {
-		const ang = (2 * Math.PI) / len,
-			wr = Math.cos(ang),
-			wi = Math.sin(ang);
-		for (let i = 0; i < n; i += len) {
-			let cr = 1,
-				ci = 0;
-			for (let k = 0; k < len / 2; k++) {
+		const half = len >> 1,
+			step = n / len;
+		for (let i = 0; i < n; i += len)
+			for (let k = 0; k < half; k++) {
 				const a = i + k,
-					b = a + len / 2;
+					b = a + half,
+					cr = cos[k * step],
+					ci = sin[k * step];
 				const tr = re[b] * cr - im[b] * ci,
 					ti = re[b] * ci + im[b] * cr;
 				re[b] = re[a] - tr;
 				im[b] = im[a] - ti;
 				re[a] += tr;
 				im[a] += ti;
-				[cr, ci] = [cr * wr - ci * wi, cr * wi + ci * wr];
 			}
-		}
 	}
 }
 

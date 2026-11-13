@@ -22,6 +22,8 @@ export type Message =
 	| { type: 'bank'; id: string; buffer?: ArrayBuffer; samples: DecodedSample[] }
 	| { type: 'program'; ch: number; program: number }
 	| { type: 'gain'; ch: number; gain: number }
+	/** A MIDI message to play now, such as a note from a keyboard. */
+	| { type: 'midi'; data: number[]; offset?: number }
 	| PlayCommand;
 
 /**
@@ -94,14 +96,26 @@ export class Engine {
 			this.#events = m.events;
 			this.#notes = m.notes;
 		} else if (m.type === 'bank') {
+			// With a buffer, the bank is new or replaces the one of this id.
 			let bank = this.#banks.get(m.id);
-			if (!bank) {
-				bank = SoundBankLoader.fromArrayBuffer(m.buffer!);
+			if (m.buffer) {
+				bank = SoundBankLoader.fromArrayBuffer(m.buffer);
 				this.#banks.set(m.id, bank);
-				synth.soundBankManager.addSoundBank(bank, m.id);
+				const entry = synth.soundBankManager.soundBankList.find((e) => e.id === m.id);
+				if (entry) {
+					// Unlike adding a bank, this doesn't reset the synthesizer: the channels keep their
+					// controllers, the notes that sound go on with the old samples, and the next notes
+					// play the new ones.
+					entry.soundBank = bank;
+					synth.refreshPresets();
+				} else {
+					synth.soundBankManager.addSoundBank(bank, m.id);
+					// Adding a bank resets the controllers of all channels, and stops all notes.
+					if (this.#play) this.#seek(this.#play.pos, this.#play.rate);
+				}
 			}
 			for (const { index, data } of m.samples) {
-				const sample = bank.samples[index];
+				const sample = bank!.samples[index];
 				sample.setAudioData(data, sample.sampleRate);
 			}
 		} else if (m.type === 'program') {
@@ -117,6 +131,9 @@ export class Engine {
 				this.#gains.set(m.ch, { target: m.gain, gain: m.gain });
 				this.#channel(m.ch).setSystemParameter('gain', m.gain);
 			}
+		} else if (m.type === 'midi') {
+			this.#channel((m.data[0] & 0x0f) + (m.offset ?? 0));
+			synth.processMessage(m.data, m.offset);
 		} else if (m.type === 'stop') {
 			// It cancels playing that hasn't started yet.
 			this.#commands = [m];

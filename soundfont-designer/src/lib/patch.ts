@@ -21,9 +21,12 @@ export interface Patch {
 		harmonics: number[];
 		/** The highest harmonic. */
 		maxHarmonic: number;
-		/** Copies of the spectrum, detuned against each other, for a sound like several singers. */
+		/**
+		 * Copies of each harmonic above the fundamental, detuned at random against each other, for a
+		 * sound like several singers.
+		 */
 		voices: number;
-		/** Cents between the highest and the lowest voice. */
+		/** The most cents between two copies. */
 		detune: number;
 		/** Level of the breath noise against the harmonics, in dB. */
 		noise: number;
@@ -112,7 +115,7 @@ export const DEFAULT_PATCH: Patch = {
 	dynamics: { source: 'cc2', range: 72, brightness: 2400 },
 	attack: {
 		enabled: true,
-		level: -4,
+		level: 0,
 		decay: 140,
 		damping: 0.4,
 		tilt: -6,

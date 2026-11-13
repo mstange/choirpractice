@@ -1,4 +1,4 @@
-import type { Message, ScoreEvent, ScoreNote } from './synth-engine.ts';
+import type { DecodedSample, Message, ScoreEvent, ScoreNote } from './synth-engine.ts';
 import type { MidiReply, Request, SamplesReply } from './synth-worker.ts';
 import workletUrl from './synth-worklet.ts?worker&url';
 
@@ -142,19 +142,50 @@ export class Synth {
 		else this.#queue.push([m, transfer]);
 	}
 
-	/** Plays channel `ch` with another General MIDI program, once its samples are loaded. */
-	protected async setProgram(ch: number, program: number) {
-		const change = (this.#changes.get(ch) ?? 0) + 1;
-		this.#changes.set(ch, change);
+	/**
+	 * Plays channel `ch` with another General MIDI program, once its samples are loaded: those that
+	 * `notes` ([key, velocity]) need, by default the channel's notes in the score.
+	 */
+	protected async setProgram(ch: number, program: number, notes = this.#notes.get(ch) ?? []) {
+		const change = this.#nextChange(ch);
 		const id = this.#soundfontUrl(program);
 		const { buffer, samples } = await this.#request<SamplesReply>({
 			type: 'samples',
 			url: id,
-			notes: this.#notes.get(ch) ?? []
+			notes
 		});
 		const transfer = [...samples.map((s) => s.data.buffer), ...(buffer ? [buffer] : [])];
 		this.#post({ type: 'bank', id, buffer, samples }, transfer);
 		if (this.#changes.get(ch) === change) this.#post({ type: 'program', ch, program });
+	}
+
+	#nextChange(ch: number) {
+		const change = (this.#changes.get(ch) ?? 0) + 1;
+		this.#changes.set(ch, change);
+		return change;
+	}
+
+	/**
+	 * Adds a sound bank made in memory, all of its samples decoded, or replaces the bank with this
+	 * id. Channels that play its presets play the new ones from their next note.
+	 */
+	addBank(id: string, buffer: ArrayBuffer, samples: DecodedSample[]) {
+		this.#post({ type: 'bank', id, buffer, samples }, [
+			buffer,
+			...samples.map((s) => s.data.buffer)
+		]);
+	}
+
+	/** Plays channel `ch` with a program of a bank given to addBank(). */
+	protected assign(ch: number, program: number) {
+		this.#nextChange(ch);
+		this.#post({ type: 'program', ch, program });
+	}
+
+	/** Plays a MIDI message now, on a channel beyond the score's 16 if `offset` is given. */
+	send(data: number[], offset?: number) {
+		this.#ctx.resume();
+		this.#post({ type: 'midi', data, offset });
 	}
 
 	now() {

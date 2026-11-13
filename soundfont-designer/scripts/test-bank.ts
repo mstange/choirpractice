@@ -8,10 +8,12 @@ import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
 import { DEFAULT_PATCH, complete } from '../src/lib/patch.ts';
+import { Engine } from '../src/lib/synth/synth-engine.ts';
 
 const RATE = 48000,
 	PROGRAM = 54;
-const soundfonts = process.argv[2] ?? new URL('../../choirpractice-app/media/soundfont/', import.meta.url).pathname;
+const soundfonts =
+	process.argv[2] ?? new URL('../../choirpractice-app/media/soundfont/', import.meta.url).pathname;
 
 const t = performance.now();
 const { bank, clipped } = buildBank(DEFAULT_PATCH, PROGRAM);
@@ -73,10 +75,16 @@ const check = (ok: boolean, what: string) => {
 // CC2 sets the tone's loudness; velocity doesn't.
 const levels = [32, 64, 96, 127].map((cc) => sustain(render(custom, PROGRAM, 60, 64, cc, 4)));
 console.log('sustain dB at CC2 32/64/96/127:', levels.map(fmt).join(''));
-check(levels.every((d, i) => i === 0 || d > levels[i - 1] + 2), 'louder with CC2');
+check(
+	levels.every((d, i) => i === 0 || d > levels[i - 1] + 2),
+	'louder with CC2'
+);
 const soft = sustain(render(custom, PROGRAM, 60, 20, 64, 4)),
 	loud = sustain(render(custom, PROGRAM, 60, 120, 64, 4));
-check(Math.abs(soft - loud) < 0.5, `sustain doesn't follow velocity (${fmt(soft)} vs ${fmt(loud)})`);
+check(
+	Math.abs(soft - loud) < 0.5,
+	`sustain doesn't follow velocity (${fmt(soft)} vs ${fmt(loud)})`
+);
 // The attack does, heard alone with the tone silent at CC2 0.
 const peak = (vel: number) => Math.max(...render(custom, PROGRAM, 60, vel, 0, 0.3).slice(0, 3));
 check(peak(120) > peak(20) + 6, `attack follows velocity (${fmt(peak(20))} vs ${fmt(peak(120))})`);
@@ -113,6 +121,60 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 		synth.midiChannels[0].preset?.name === quieter.name &&
 			synth.soundBankManager.soundBankList.length === 1,
 		'swap selects the new preset'
+	);
+}
+
+// The page's audio thread: a new version of the bank under the same id is played by the next
+// note on the channel that has its program, and adding a bank while playing keeps the
+// controllers that the score set.
+{
+	const engine = new Engine(RATE);
+	const bank = (level: number) => {
+		const p = complete({ ...DEFAULT_PATCH, tone: { ...DEFAULT_PATCH.tone, level } });
+		const file = buildBank(p, PROGRAM).bank.writeSF2({ writeDefaultModulators: true });
+		const read = SoundBankLoader.fromArrayBuffer(file.slice(0));
+		const samples = read.samples.map((s, index) => ({ index, data: s.getAudioData() }));
+		return { type: 'bank' as const, id: 'designed', buffer: file, samples };
+	};
+	/** The level in dB of a second of channel 16 playing middle C, starting at `frame`. */
+	const level = (frame: number) => {
+		engine.receive({ type: 'midi', data: [0xb0, 2, 100], offset: 16 });
+		engine.receive({ type: 'midi', data: [0x90, 60, 100], offset: 16 });
+		let e = 0;
+		for (let i = 0; i < RATE; i += 128) {
+			const l = new Float32Array(128),
+				r = new Float32Array(128);
+			engine.render(frame + i, l, r);
+			if (i > RATE / 2) for (const v of l) e += v * v;
+		}
+		engine.receive({ type: 'midi', data: [0x80, 60, 0], offset: 16 });
+		for (let i = 0; i < RATE; i += 128)
+			engine.render(frame + RATE + i, new Float32Array(128), new Float32Array(128));
+		return 10 * Math.log10(e / (RATE / 2));
+	};
+	engine.receive(bank(0));
+	engine.receive({ type: 'program', ch: 16, program: PROGRAM });
+	const first = level(0);
+	engine.receive(bank(-20));
+	const second = level(2 * RATE);
+	check(
+		Math.abs(first - second - 20) < 1,
+		`engine plays the new bank (${fmt(first)} → ${fmt(second)} dB)`
+	);
+
+	// A score that sets channel 0's volume, playing; then a bank is added.
+	engine.receive({
+		type: 'score',
+		events: [{ t: 0, data: [0xb0, 7, 40] }],
+		notes: []
+	});
+	engine.receive({ type: 'play', frame: 4 * RATE, pos: 0, rate: 1, loop: null, seek: true });
+	for (let i = 0; i < RATE / 10; i += 128)
+		engine.render(4 * RATE + i, new Float32Array(128), new Float32Array(128));
+	engine.receive({ ...bank(0), id: 'another' });
+	check(
+		engine.synth.midiChannels[0].midiControllers[7] >> 7 === 40,
+		"adding a bank while playing keeps the score's controllers"
 	);
 }
 

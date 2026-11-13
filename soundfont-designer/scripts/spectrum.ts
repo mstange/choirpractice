@@ -117,14 +117,16 @@ for (const key of keys) {
 		)
 	);
 	// Over the harmonics within 50 dB of Choir Aahs's strongest: how far the levels are from Choir
-	// Aahs's, and the harmonics' height above the noise, and their spread.
+	// Aahs's (as the contour's fit measures it, with the best offset for the key), and the
+	// harmonics' height above the noise, and their spread.
 	const heard = a.map((h, i) => i).filter((i) => db(a[i].level / ra) > -50);
 	const avg = (f: (i: number) => number) => heard.reduce((s, i) => s + f(i), 0) / heard.length;
 	console.log(
-		`summary: level error (rms) ${Math.sqrt(avg((i) => (db(a[i].level / ra) - db(c[i].level / rc)) ** 2)).toFixed(1)} dB, ` +
+		`summary: level error (rms) ${fitContour([a], [c], [key]).before.toFixed(1)} dB, ` +
 			`above the noise ${avg((i) => db(a[i].level / a[i].noise)).toFixed(0)} / ${avg((i) => db(c[i].level / c[i].noise)).toFixed(0)} dB, ` +
 			`spread ${avg((i) => a[i].cents).toFixed(0)} / ${avg((i) => c[i].cents).toFixed(0)} cents (Aahs / patch)`
 	);
+
 	// The strongest harmonic below 1 kHz, of Choir Aahs, and a high one.
 	const strong = a.slice(0, Math.max(1, Math.floor(1000 / f0)));
 	for (const h of [

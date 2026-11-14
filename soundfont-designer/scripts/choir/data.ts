@@ -2,6 +2,7 @@
 // recordings and pitch tracks. See README.md here.
 import { readFileSync } from 'node:fs';
 import { ifft } from '../../src/lib/dsp.ts';
+import type { Harmonic } from '../../src/lib/measure.ts';
 
 export const root = new URL('../../../', import.meta.url).pathname,
 	/** The dataset's version 5, unpacked, which has the pitch tracks and note annotations. */
@@ -112,4 +113,66 @@ export function harmonicPowers(
 		}
 	}
 	return { level, noise };
+}
+
+/** Seconds of a note left out at its start (the consonant, the onset) and end, and the least left. */
+export const SKIP_START = 0.15,
+	SKIP_END = 0.1,
+	MIN_LEFT = 0.3;
+
+/** The summed power of each harmonic and of the noise beside it, of some notes. */
+export type Sum = { level: number[]; noise: number[]; notes: number };
+/** Of a section's notes on a key: all of them, and every other one, for testing fits. */
+export type KeyHarmonics = Sum & { section: string; key: number; halves: Sum[] };
+
+export const harmonicsOf = (e: Sum): Harmonic[] =>
+	e.level.map((level, h) => ({ level, noise: e.noise[h], cents: 0 }));
+
+/**
+ * Per section and key, the harmonics of the notes sung on `vowel`, without their start and end,
+ * per window at the singers' mean pitch, each note normalized to the same power, by key.
+ */
+export function choirHarmonics(vowel: string, notes = readNotes()): KeyHarmonics[] {
+	const sums = new Map<string, KeyHarmonics>();
+	const add = (to: Sum, level: number[], noise: number[], total: number) => {
+		level.forEach((v, h) => (to.level[h] = (to.level[h] ?? 0) + v / total));
+		noise.forEach((v, h) => (to.noise[h] = (to.noise[h] ?? 0) + v / total));
+		to.notes++;
+	};
+	for (const section of SECTIONS) {
+		const mine = notes[section].filter(
+			(n) => n.v === vowel && n.d - SKIP_START - SKIP_END >= MIN_LEFT
+		);
+		if (!mine.length) continue;
+		const { mix, rate } = sectionMix(section),
+			f0s = sectionF0(section);
+		const pitchAt = (t: number) => {
+			const p = f0s.map(({ hop, hz }) => hz[Math.round(t / hop)] ?? 0).filter((f) => f);
+			return p.length < 2 ? null : 2 ** (p.reduce((s, f) => s + Math.log2(f), 0) / p.length);
+		};
+		for (const n of mine) {
+			const name = `${section} ${n.key}`,
+				entry = sums.get(name) ?? {
+					section,
+					key: n.key,
+					level: [],
+					noise: [],
+					notes: 0,
+					halves: [0, 1].map(() => ({ level: [], noise: [], notes: 0 }))
+				};
+			const { level, noise } = harmonicPowers(
+				mix,
+				rate,
+				n.t + SKIP_START,
+				n.t + n.d - SKIP_END,
+				pitchAt
+			);
+			const total = level.reduce((s, v) => s + v, 0);
+			if (!total) continue;
+			sums.set(name, entry);
+			add(entry.halves[entry.notes % 2], level, noise, total);
+			add(entry, level, noise, total);
+		}
+	}
+	return [...sums.values()].sort((a, b) => a.key - b.key);
 }

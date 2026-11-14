@@ -146,7 +146,7 @@
 			};
 	}
 
-	/** What a vowel's sound is: '' for borrowed, a vowel of the table, or 'sung'. */
+	/** What a vowel's sound is: '' for borrowed, a vowel of the table, 'sung' or 'fitted'. */
 	const source = (ipa: Ipa) => patch.vowels[ipa]?.vowel ?? TABLE_VOWELS[ipa] ?? '';
 	const hasSung = (f: VowelFormants | undefined) =>
 		!!f && (f.vowel === 'sung' || f.measured.length > 0 || f.sung.some((x) => x !== 1));
@@ -158,7 +158,7 @@
 		patch.selected = ipa;
 		const own = patch.vowels[ipa];
 		if (value === '') delete patch.vowels[ipa];
-		else if (hasSung(own)) own!.vowel = value as Vowel | 'sung';
+		else if (hasSung(own) || own?.registers) own!.vowel = value as Vowel | 'sung' | 'fitted';
 		else if (value === TABLE_VOWELS[ipa]) delete patch.vowels[ipa];
 		else patch.vowels[ipa] = { vowel: value as Vowel, sung: [1, 1, 1], measured: [] };
 	}
@@ -260,7 +260,9 @@
 	<p>
 		A vowel is a vocal tract's resonances, its formants, against a neutral vowel's: a bass's on E2,
 		a tenor's on A#3 and a soprano's on E5, and in between on the keys between. The rest of the
-		timbre is the spectral contour, which every vowel shares.
+		timbre is the spectral contour, which every vowel shares. A vowel <b>fitted to a choir</b> (in Recorded
+		Choir) has formants of its own on each of the three keys, fitted to a recorded choir's notes on it,
+		and may have a contour of its own, added to the shared one.
 	</p>
 	<p>
 		A sung vowel is measured against your "ah", so that your voice, the microphone and the room are
@@ -353,14 +355,17 @@
 						class:dim={!own}
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
-						title={own?.measured.length
-							? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
-							: undefined}
+						title={own?.vowel === 'fitted' && own.registers
+							? `Fitted: F1–F3 ${own.registers.map((r) => r.freq.slice(0, 3).join(', ')).join(' Hz on E2, ')} Hz on E5${own.contour ? ', with a contour of its own' : ''}`
+							: own?.measured.length
+								? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
+								: undefined}
 					>
 						{#if !TABLE_VOWELS[v.ipa]}<option value="">same as {nameOf(borrowed(v.ipa))}</option
 							>{/if}
 						{#each VOWELS as t (t)}<option value={t}>built-in {tableName(t)}</option>{/each}
 						{#if hasSung(own)}<option value="sung">your recording</option>{/if}
+						{#if own?.registers}<option value="fitted">fitted to a choir</option>{/if}
 					</select>
 				</td>
 				<td>

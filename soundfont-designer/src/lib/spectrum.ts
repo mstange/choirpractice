@@ -19,14 +19,16 @@ export function contourCurve(contour: number[][], key: number) {
 }
 
 /**
- * The gain in dB of the EQ, the vowel and the contour at `key`: what shapes the tone by
- * frequency, singing `formants`, by default the selected vowel's.
+ * The gain in dB of the EQ, the vowel and the contour at `key`, with the vowel's own change to
+ * the contour: what shapes the tone by frequency, singing `formants`, by default the selected
+ * vowel's.
  */
 export function toneEq(p: Patch, key: number, formants: VowelFormants = selectedFormants(p)) {
 	const eq = eqCurve(p.eq),
 		vowel = vowelCurve(formants, p.vowel, key),
-		contour = contourCurve(p.contour, key);
-	return (f: number) => eq(f) + vowel(f) + contour(f);
+		contour = contourCurve(p.contour, key),
+		own = formants.contour ? contourCurve(formants.contour, key) : () => 0;
+	return (f: number) => eq(f) + vowel(f) + contour(f) + own(f);
 }
 
 /**

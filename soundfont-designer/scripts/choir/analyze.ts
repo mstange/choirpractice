@@ -11,31 +11,26 @@ import { keyFreq } from '../../src/lib/dsp.ts';
 import { db, fitContour, measure, patchBank, type Harmonic } from '../../src/lib/measure.ts';
 import { CONTOUR_KEYS, complete } from '../../src/lib/patch.ts';
 import { MS_BASIC_AAHS } from '../../src/lib/presets.ts';
-import { SECTIONS, harmonicPowers, readNotes, root, sectionF0, sectionMix } from './data.ts';
+import {
+	MIN_LEFT,
+	SECTIONS,
+	SKIP_END,
+	SKIP_START,
+	choirHarmonics,
+	harmonicsOf,
+	readNotes,
+	root,
+	sectionF0
+} from './data.ts';
 
 const notes = readNotes();
 const args = process.argv.slice(2),
 	vowel = args[0] && !args[0].startsWith('--') ? args[0] : 'a',
 	writeTo = args.includes('--write') ? args[args.indexOf('--write') + 1] : null;
 
-const /** Seconds left out at a note's start (the consonant, the onset) and end. */
-	SKIP_START = 0.15,
-	SKIP_END = 0.1,
-	MIN_LEFT = 0.3;
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
 const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
 
-/**
- * Per section and key, the summed power of each harmonic and of the noise beside it, of all its
- * notes and of every other note, for testing a fit on notes that it wasn't fitted on.
- */
-type Sum = { level: number[]; noise: number[]; notes: number };
-const sums = new Map<string, Sum & { key: number; halves: Sum[] }>();
-const add = (to: Sum, level: number[], noise: number[], total: number) => {
-	level.forEach((v, h) => (to.level[h] = (to.level[h] ?? 0) + v / total));
-	noise.forEach((v, h) => (to.noise[h] = (to.noise[h] ?? 0) + v / total));
-	to.notes++;
-};
 type Vibrato = { rate: number; depth: number };
 const ensemble: Record<
 	string,
@@ -61,8 +56,7 @@ function vibrato(c: number[], hop: number): Vibrato | null {
 	};
 }
 for (const section of SECTIONS) {
-	const { mix, rate } = sectionMix(section),
-		f0s = sectionF0(section);
+	const f0s = sectionF0(section);
 	/** Each singer's f0 at `t`, in Hz, 0 where unvoiced. */
 	const pitches = (t: number) => f0s.map(({ hop, hz }) => hz[Math.round(t / hop)] ?? 0);
 	const ens: (typeof ensemble)[string] = (ensemble[section] = {
@@ -107,26 +101,6 @@ for (const section of SECTIONS) {
 			);
 			if (v) ens.meanVib.push(v);
 		}
-
-		// Harmonics, per frame at the singers' mean pitch, summed over the note's frames, then
-		// normalized so that each note counts the same.
-		const k0 = `${section} ${note.key}`,
-			entry = sums.get(k0) ?? {
-				key: note.key,
-				level: [],
-				noise: [],
-				notes: 0,
-				halves: [0, 1].map(() => ({ level: [], noise: [], notes: 0 }))
-			};
-		sums.set(k0, entry);
-		const { level, noise } = harmonicPowers(mix, rate, from, to, (t) => {
-			const p = pitches(t).filter((f) => f);
-			return p.length < 2 ? null : 2 ** mean(p.map(Math.log2));
-		});
-		const total = level.reduce((s, v) => s + v, 0);
-		if (!total) continue;
-		add(entry.halves[entry.notes % 2], level, noise, total);
-		add(entry, level, noise, total);
 	}
 }
 
@@ -142,14 +116,10 @@ for (const [section, e] of Object.entries(ensemble)) {
 	);
 }
 
-const entries = [...sums.entries()]
-	.filter(([, e]) => e.notes > 0)
-	.sort(([, a], [, b]) => a.key - b.key);
+const entries = choirHarmonics(vowel, notes).map((e) => [`${e.section} ${e.key}`, e] as const);
 console.log(
 	`\n${entries.length} section-keys: ${entries.map(([k, e]) => `${k} (${e.notes})`).join(', ')}`
 );
-const harmonicsOf = (e: Sum): Harmonic[] =>
-	e.level.map((level, h) => ({ level, noise: e.noise[h], cents: 0 }));
 const theirs = entries.map(([, e]) => harmonicsOf(e));
 const keys = entries.map(([, e]) => e.key);
 

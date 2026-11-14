@@ -9,11 +9,25 @@ export type Vowel = 'a' | 'e' | 'i' | 'o' | 'u';
 export const EDITING_BANK = 100;
 /**
  * A vowel's formants: those of `vowel` in Csound's table, or with `vowel` 'sung', those of a with
- * F1 to F3 times `sung`, the ratios of a vowel that the user sang to their "ah" (see vowel.ts).
- * `measured` has the formants in Hz that those came from, of the "ah" and of the vowel, if known.
- * A vowel of the table keeps what was sung, so that it can go back to it.
+ * F1 to F3 times `sung`, the ratios of a vowel that the user sang to their "ah" (see vowel.ts), or
+ * with `vowel` 'fitted', those of `registers`. `measured` has the formants in Hz that the sung
+ * ratios came from, of the "ah" and of the vowel, if known. A vowel of the table keeps what was
+ * sung, so that it can go back to it.
  */
-export type VowelFormants = { vowel: Vowel | 'sung'; sung: number[]; measured: number[][] };
+export type VowelFormants = {
+	vowel: Vowel | 'sung' | 'fitted';
+	sung: number[];
+	measured: number[][];
+	/**
+	 * Per register of CONTOUR_KEYS, the five formants' frequencies and bandwidths in Hz, as fitted
+	 * to a recording: the bandwidths aren't scaled by the patch's formant width.
+	 */
+	registers?: Formants[];
+	/** dB added to the patch's contour while singing this vowel, per register at CONTOUR_FREQS. */
+	contour?: number[][];
+};
+/** Formant frequencies and bandwidths in Hz, of five formants. */
+export type Formants = { freq: number[]; bw: number[] };
 
 /**
  * An instrument of two layers that sound together on every note: a sustained tone, a looped

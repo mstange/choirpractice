@@ -16,41 +16,55 @@ const TOP = 3500;
 
 export type Frame = { midi: number; freq: number[]; db: number[] };
 
+let win = new Float64Array(0),
+	windowed = new Float64Array(0);
+
 /**
- * The pitched frames of `x`: their pitch and their harmonics' frequencies and levels in dB, of the
- * harmonics that stand above the noise between them, in the frames within 20 dB of the loudest.
+ * The harmonics of `frame`, at the pitch `midi`, that stand above the noise halfway to their
+ * neighbours, up to `TOP`: their frequencies and levels in dB.
+ */
+export function harmonics(frame: Float32Array, rate: number, midi: number) {
+	const n = frame.length;
+	if (win.length !== n) {
+		win = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / n));
+		windowed = new Float64Array(n);
+	}
+	for (let i = 0; i < n; i++) windowed[i] = win[i] * frame[i];
+	/** The amplitude of the windowed frame at `f` Hz, by Goertzel's recurrence. */
+	const at = (f: number) => {
+		const c = 2 * Math.cos((2 * Math.PI * f) / rate);
+		let s1 = 0,
+			s2 = 0;
+		for (let i = 0; i < n; i++) [s1, s2] = [windowed[i] + c * s1 - s2, s1];
+		return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - c * s1 * s2));
+	};
+	const f0 = 440 * 2 ** ((midi - 69) / 12),
+		freq: number[] = [],
+		db: number[] = [];
+	for (let k = 1; k * f0 < TOP; k++) {
+		const a = at(k * f0),
+			noise = Math.max(at((k - 0.5) * f0), at((k + 0.5) * f0));
+		if (a > 2 * noise) {
+			freq.push(k * f0);
+			db.push(20 * Math.log10(a));
+		}
+	}
+	return { freq, db };
+}
+
+/**
+ * The pitched frames of `x`: their pitch and their harmonics, in the frames within 20 dB of the
+ * loudest that have at least three.
  */
 export function analyse(x: Float32Array, rate: number): Frame[] {
 	const n = Math.round(WINDOW * rate),
-		hop = Math.round(HOP * rate),
-		win = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / n));
-	/** The amplitude of the windowed frame at `f` Hz. */
-	const at = (frame: Float32Array, f: number) => {
-		const w = (2 * Math.PI * f) / rate;
-		let re = 0,
-			im = 0;
-		for (let i = 0; i < n; i++) {
-			re += win[i] * frame[i] * Math.cos(w * i);
-			im -= win[i] * frame[i] * Math.sin(w * i);
-		}
-		return Math.hypot(re, im);
-	};
+		hop = Math.round(HOP * rate);
 	const frames: (Frame & { rms: number })[] = [];
 	for (let start = 0; start + n <= x.length; start += hop) {
 		const frame = x.subarray(start, start + n),
 			midi = detectPitch(frame, rate);
 		if (midi === null) continue;
-		const f0 = 440 * 2 ** ((midi - 69) / 12),
-			freq = [],
-			db = [];
-		for (let k = 1; k * f0 < TOP; k++) {
-			const a = at(frame, k * f0),
-				noise = Math.max(at(frame, (k - 0.5) * f0), at(frame, (k + 0.5) * f0));
-			if (a > 2 * noise) {
-				freq.push(k * f0);
-				db.push(20 * Math.log10(a));
-			}
-		}
+		const { freq, db } = harmonics(frame, rate, midi);
 		let rms = 0;
 		for (const v of frame) rms += v * v;
 		if (freq.length >= 3) frames.push({ midi, freq, db, rms: 10 * Math.log10(rms / n) });

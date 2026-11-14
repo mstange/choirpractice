@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { DesignerSynth } from '../designer-synth.ts';
 	import type { Patch, Vowel, VowelFormants } from '../patch.ts';
-	import { Recorder } from '../recorder.ts';
+	import { Recorder, wav } from '../recorder.ts';
+	import { harmonics } from '../sung.ts';
 	import type { SungReply, SungRequest } from '../sung-worker.ts';
+	import { detectPitch } from '../../../../site/src/lib/pitch.ts';
 	import { sungAh, TABLE_VOWELS, VOWELS, vowelFormants } from '../vowel.ts';
 	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../../../site/src/lib/vowels.ts';
 	import { prepare } from './canvas.ts';
@@ -14,19 +16,20 @@
 		singVowels = $bindable()
 	}: { patch: Patch; synth: DesignerSynth | null; singVowels: boolean } = $props();
 
-	/** The ranges to sing over, an octave each. */
-	const RANGES: [string, number][] = [
-		['A2–A3', 45],
-		['D3–D4', 50],
-		['A3–A4', 57]
-	];
 	/**
-	 * The seconds of pitch that each semitone of the range wants, and the most seconds recorded:
-	 * the recording stops once every semitone has its seconds. Moving the pitch moves the harmonics
-	 * through the formants, so how it moves doesn't matter, only that it covers the range.
+	 * The fit needs the harmonics to sample the spectrum densely: frequency bands of an eighth of an
+	 * octave from `LOWEST` Hz up to the highest harmonic measured, each with harmonics in it for
+	 * `NEED` seconds. A held note fills the bands wider than its pitch, above about 1 kHz; the
+	 * narrower bands below fill as the pitch moves, by a few semitones near F1. The bands below the
+	 * lowest pitch sung can't fill, and aren't needed. The recording stops once every band needed
+	 * is full, or after `LONGEST` seconds.
 	 */
-	const NEED = 0.3,
+	const LOWEST = 250,
+		BANDS = 30,
+		NEED = 0.2,
 		LONGEST = 30;
+	const bandOf = (f: number) => Math.floor(8 * Math.log2(f / LOWEST)),
+		bandFreq = (i: number) => LOWEST * 2 ** (i / 8);
 	/** The fewest frames with a clear pitch that a fit is made from, and the most error trusted. */
 	const MIN_FRAMES = 100,
 		MAX_ERROR = 6;
@@ -36,15 +39,23 @@
 	const tableName = (v: Vowel) =>
 		nameOf(Object.entries(TABLE_VOWELS).find(([, t]) => t === v)![0] as Ipa);
 
-	let low = $state(RANGES[0][1]),
-		busy = $state<Ipa | null>(null),
+	let busy = $state<Ipa | null>(null),
 		phase = $state<'record' | 'fit'>('record'),
 		error = $state(''),
 		last = $state<{ ipa: Ipa; r: SungReply } | null>(null);
-	/** The time since the recording started, the pitch sung, and the seconds sung per semitone. */
+	/** The time since the recording started, the pitch sung, and the seconds of harmonics per band. */
 	let now = $state(-1),
 		trace = $state.raw<[number, number][]>([]),
-		covered = $state.raw<number[]>(Array(12).fill(0));
+		covered = $state.raw<number[]>(Array(BANDS).fill(0));
+	/** The first band needed: the lowest above the lowest pitch sung. */
+	const firstNeeded = $derived(
+		trace.length
+			? Math.max(0, Math.ceil(8 * Math.log2(Math.min(...trace.map(([, m]) => hz(m))) / LOWEST)))
+			: 0
+	);
+	const full = $derived(covered.filter((c, i) => i >= firstNeeded && c >= NEED).length);
+	/** The latest recording, to download. */
+	let recording = $state<{ ipa: Ipa; url: string } | null>(null);
 	/** Ends the recording early. */
 	let done: (() => void) | null = null;
 
@@ -89,7 +100,7 @@
 			return;
 		}
 		trace = [];
-		covered = Array(12).fill(0);
+		covered = Array(BANDS).fill(0);
 		phase = 'record';
 		recorder.start();
 		const start = performance.now();
@@ -104,18 +115,25 @@
 			const follow = (t: number) => {
 				now = Math.max(0, (t - start) / 1000);
 				const dt = Math.min(0.1, Math.max(0, (t - before) / 1000)),
-					p = recorder.pitch(),
-					i = p === null ? -1 : Math.floor(p - low);
+					input = recorder.latest(),
+					p = detectPitch(input, recorder.rate);
 				before = t;
-				if (p !== null) trace = [...trace, [now, p]];
-				if (i >= 0 && i < 12) covered = covered.with(i, covered[i] + dt);
-				if (now >= LONGEST || covered.every((c) => c >= NEED)) done!();
+				if (p !== null) {
+					trace = [...trace, [now, p]];
+					const next = covered.slice();
+					for (const f of new Set(harmonics(input, recorder.rate, p).freq.map(bandOf)))
+						if (f >= 0 && f < BANDS) next[f] += dt;
+					covered = next;
+				}
+				if (now >= LONGEST || (trace.length && full === BANDS - firstNeeded)) done!();
 				else frame = requestAnimationFrame(follow);
 			};
 			frame = requestAnimationFrame(follow);
 		});
 		const x = recorder.stop();
 		now = -1;
+		if (recording) URL.revokeObjectURL(recording.url);
+		recording = { ipa, url: URL.createObjectURL(wav(x, recorder.rate)) };
 		phase = 'fit';
 		const r = await fit(x, recorder.rate);
 		busy = null;
@@ -158,6 +176,7 @@
 		else patch.vowels[ipa] = { vowel: value as Vowel, sung: [1, 1, 1], measured: [] };
 	}
 
+	const hz = (m: number) => 440 * 2 ** ((m - 69) / 12);
 	const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 	const noteName = (m: number) => {
 		const key = Math.round(m);
@@ -169,18 +188,31 @@
 	$effect(() => {
 		void width;
 		const { ctx, w, h } = prepare(canvas);
-		// The time axis grows with the recording, from 8 s.
-		const span = Math.max(8, now, trace.at(-1)?.[0] ?? 0),
+		// The pitch sung over time, above: the time axis grows with the recording, from 8 s, and
+		// the pitch axis spans what was sung, at least an octave.
+		const pitches = trace.map(([, m]) => m),
+			lo = (pitches.length ? Math.min(...pitches) : 45) - 1,
+			hi = Math.max(lo + 14, (pitches.length ? Math.max(...pitches) : 0) + 1),
+			span = Math.max(8, now, trace.at(-1)?.[0] ?? 0),
 			x = (t: number) => (t / span) * w,
-			y = (m: number) => h - 6 - ((m - low + 2) / 16) * (h - 12);
-		// The semitones of the range, brighter as they are covered.
+			y = (m: number) => h - 30 - ((m - lo) / (hi - lo)) * (h - 36);
+		// The frequency bands, below, brighter as they fill, and dark where they aren't needed.
+		const band = (i: number) => (i / BANDS) * w;
 		covered.forEach((c, i) => {
-			ctx.fillStyle = `rgba(240, 180, 41, ${0.08 + 0.4 * Math.min(1, c / NEED)})`;
-			ctx.fillRect(0, y(low + i + 1), w, y(low + i) - y(low + i + 1) - 1);
+			ctx.fillStyle =
+				i < firstNeeded ? '#1c1f26' : `rgba(240, 180, 41, ${0.12 + 0.6 * Math.min(1, c / NEED)})`;
+			ctx.fillRect(band(i), h - 14, band(i + 1) - band(i) - 1, 14);
 		});
-		ctx.strokeStyle = '#2c303a';
 		ctx.fillStyle = '#6a7080';
-		for (const m of [low, low + 6, low + 12]) {
+		for (const f of [250, 500, 1000, 2000]) {
+			const i = 8 * Math.log2(f / LOWEST);
+			ctx.fillText(f < 1000 ? `${f} Hz` : `${f / 1000} kHz`, band(i) + 2, h - 17);
+		}
+		ctx.textAlign = 'right';
+		ctx.fillText(`${(bandFreq(BANDS) / 1000).toFixed(1)} kHz`, w - 2, h - 17);
+		ctx.textAlign = 'left';
+		ctx.strokeStyle = '#2c303a';
+		for (let m = Math.ceil(lo / 6) * 6; m <= hi; m += 6) {
 			ctx.beginPath();
 			ctx.moveTo(0, y(m));
 			ctx.lineTo(w, y(m));
@@ -193,7 +225,7 @@
 			ctx.strokeStyle = '#fff';
 			ctx.beginPath();
 			ctx.moveTo(x(now), 0);
-			ctx.lineTo(x(now), h);
+			ctx.lineTo(x(now), h - 30);
 			ctx.stroke();
 		}
 	});
@@ -251,30 +283,31 @@
 >
 
 <p class="hint">
-	Sing: sing the vowel at any pitches in a range that is comfortable, in slides, steps or anything,
-	until every semitone of the range has lit up, or press Done. Use headphones, or nothing else
-	playing.
+	Sing: sing the vowel at whatever pitches are comfortable, moving around by a few semitones, in
+	slides, steps or anything, until the frequency bands under the plot have lit up, or press Done.
+	The low bands need the pitch to move; low pitches light more of them. Use headphones, or nothing
+	else playing.
 </p>
-<div class="row">
-	Range
-	{#each RANGES as [label, key] (key)}
-		<button class:on={low === key} disabled={!!busy} onclick={() => (low = key)}>{label}</button>
-	{/each}
-	{#if busy}
-		<span class="hint"
-			>{nameOf(busy)}: {phase === 'record'
-				? `${covered.filter((c) => c >= NEED).length} of 12 semitones`
-				: 'finding the formants…'}</span
-		>
-	{/if}
-</div>
-<canvas bind:this={canvas} bind:clientWidth={width} style="height: 110px"></canvas>
+{#if busy}
+	<p class="hint">
+		{nameOf(busy)}: {phase === 'record'
+			? `${full} of ${BANDS - firstNeeded} frequency bands`
+			: 'finding the formants…'}
+	</p>
+{/if}
+<canvas bind:this={canvas} bind:clientWidth={width} style="height: 140px"></canvas>
 {#if error}<p class="warn">{error}</p>{/if}
 {#if last}
 	<p class="hint">
 		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.error > MAX_ERROR}<span class="warn"
 				>{' — a poor fit: try again'}</span
 			>{/if}.
+	</p>
+{/if}
+{#if recording && !busy}
+	<p class="hint">
+		<a href={recording.url} download="sung-{nameOf(recording.ipa)}.wav">Download the recording</a>
+		of {nameOf(recording.ipa)}
 	</p>
 {/if}
 {#if stale.length}
@@ -329,12 +362,6 @@
 </table>
 
 <style>
-	.row {
-		display: flex;
-		gap: 4px;
-		align-items: center;
-		margin: 4px 0;
-	}
 	.warn {
 		color: #e8657a;
 	}

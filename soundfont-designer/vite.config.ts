@@ -36,6 +36,9 @@ export default defineConfig({
 	worker: { format: 'es' },
 	// The synthesizer is the choir app's, in ../site, and should use the same spessasynth as the rest.
 	resolve: { dedupe: ['spessasynth_core'] },
+	// Imported only when a file is exported, which the dev server would find out only then: it would
+	// optimize it anew and fail the import with "504 Outdated Optimize Dep" until a reload.
+	optimizeDeps: { include: ['wasm-media-encoders'] },
 	// A port of its own: on the choir app's (Vite's default), the browser would keep the choir app's
 	// service worker, which in development imports ../site/src/service-worker/index.ts from here.
 	server: { port: 5288, strictPort: true, fs: { allow: ['..'] } }

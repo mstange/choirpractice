@@ -23,7 +23,7 @@ import {
 import { CONTOUR_KEYS, MATCH_KEYS, complete } from '../src/lib/patch.ts';
 import { STARTING_POINTS } from '../src/lib/presets.ts';
 
-const soundfonts = new URL('../../choirpractice-app/media/soundfont/', import.meta.url).pathname;
+const soundfonts = new URL('../../media/soundfont/', import.meta.url).pathname;
 const args = process.argv.slice(2),
 	matching = args[0] === '--match';
 if (matching) args.shift();

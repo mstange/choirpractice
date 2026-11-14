@@ -1,6 +1,6 @@
-import { Synth, type Score } from './synth/synth.svelte.ts';
-import type { MidiReply } from './synth/synth-worker.ts';
-import type { DecodedSample, ScoreEvent, ScoreNote } from './synth/synth-engine.ts';
+import { Synth, type Score } from '../../../site/src/lib/synth.svelte.ts';
+import type { MidiReply } from '../../../site/src/lib/synth-worker.ts';
+import type { DecodedSample, ScoreEvent, ScoreNote } from '../../../site/src/lib/synth-engine.ts';
 
 /** The General MIDI program of the designed instrument while it is played here. */
 export const DESIGNED = 54;

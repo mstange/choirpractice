@@ -5,7 +5,7 @@
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from './build.ts';
 import type { Patch } from './patch.ts';
-import type { DecodedSample } from './synth/synth-engine.ts';
+import type { DecodedSample } from '../../../site/src/lib/synth-engine.ts';
 import { compress } from './vorbis.ts';
 
 /** A build for playing, with a preview of `key`, or for exporting. */

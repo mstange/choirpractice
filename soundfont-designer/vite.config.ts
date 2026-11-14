@@ -8,7 +8,7 @@ import { defineConfig, type Connect, type Plugin } from 'vite';
  * The choir app's media/ directory, with its seasons of pieces and its soundfont/ directory of MS
  * Basic programs: next to this repository, unless MEDIA says where.
  */
-const MEDIA = resolve(process.env.MEDIA ?? '../choirpractice-app/media');
+const MEDIA = resolve(process.env.MEDIA ?? '../media');
 
 /**
  * Serves MEDIA at media/, and at media/seasons.json the list of its seasons: the directories that
@@ -34,5 +34,8 @@ function media(): Plugin {
 
 export default defineConfig({
 	plugins: [media(), svelte()],
-	worker: { format: 'es' }
+	worker: { format: 'es' },
+	// The synthesizer is the choir app's, in ../site, and should use the same spessasynth as the rest.
+	resolve: { dedupe: ['spessasynth_core'] },
+	server: { fs: { allow: ['..'] } }
 });

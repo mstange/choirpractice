@@ -3,19 +3,18 @@
 // attack's, a bank can be swapped without resetting the synthesizer, and how loud the patch is
 // against MS Basic's Choir Aahs.
 //
-// Usage: node scripts/test-bank.ts [path to the choir app's media/soundfont]
+// Usage: node scripts/test-bank.ts [path to media/soundfont]
 import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
 import { DEFAULT_PATCH, MATCH_KEYS, complete } from '../src/lib/patch.ts';
-import { Engine } from '../src/lib/synth/synth-engine.ts';
+import { Engine } from '../../site/src/lib/synth-engine.ts';
 import { compress } from '../src/lib/vorbis.ts';
 
 const RATE = 48000,
 	PROGRAM = 54;
-const soundfonts =
-	process.argv[2] ?? new URL('../../choirpractice-app/media/soundfont/', import.meta.url).pathname;
+const soundfonts = process.argv[2] ?? new URL('../../media/soundfont/', import.meta.url).pathname;
 
 const t = performance.now();
 const { bank, clipped } = buildBank(DEFAULT_PATCH, PROGRAM);

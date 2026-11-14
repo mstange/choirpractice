@@ -197,9 +197,10 @@
 
 <p class="hint">
 	The choir app sings each syllable on its vowel: "moon" on oo, "night" on ah moving to ih. Each
-	vowel below sounds like a vowel of Csound's table, like one that you sang, or, until you give it a
-	sound, like the nearest vowel that has one. The selected vowel is the one that the keyboard and
-	the plots play, and that Match fits the contour around.
+	vowel below gets its sound from one of three places: <b>built-in</b>, the textbook formants of ah,
+	ay, ee, oh or oo (from Csound's formant table); <b>your recording</b>, a vowel that you sang with
+	Sing; or <b>same as</b> another vowel, the nearest one that has a sound, until you give it one. The
+	selected vowel is the one that the keyboard and the plots play, and that Match fits the contour around.
 </p>
 <details class="hint">
 	<summary>What a vowel is here</summary>
@@ -210,9 +211,9 @@
 	</p>
 	<p>
 		A sung vowel is measured against your "ah", so that your voice, the microphone and the room are
-		in both and cancel out: it moves the formants of the table's ah by the ratios of your vowel's
+		in both and cancel out: it moves the formants of the built-in ah by the ratios of your vowel's
 		formants to your "ah"'s. So sing "ah" first, in the ah row, and then the other vowels. The ah
-		row then sounds sung, which is the same as the table's ah.
+		row then plays your recording, which sounds the same as the built-in ah.
 	</p>
 </details>
 <Slider
@@ -295,9 +296,10 @@
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
 					>
-						{#if !TABLE_VOWELS[v.ipa]}<option value="">like {nameOf(borrowed(v.ipa))}</option>{/if}
-						{#each VOWELS as t (t)}<option value={t}>table {tableName(t)}</option>{/each}
-						{#if hasSung(own)}<option value="sung">sung</option>{/if}
+						{#if !TABLE_VOWELS[v.ipa]}<option value="">same as {nameOf(borrowed(v.ipa))}</option
+							>{/if}
+						{#each VOWELS as t (t)}<option value={t}>built-in {tableName(t)}</option>{/each}
+						{#if hasSung(own)}<option value="sung">your recording</option>{/if}
 					</select>
 				</td>
 				<td>

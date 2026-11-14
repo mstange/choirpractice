@@ -15,8 +15,8 @@ import {
 	type ModulatorCurveType
 } from 'spessasynth_core';
 import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
-import { formantBands, type Patch } from './patch.ts';
-import { contourCurve, lowpass, noiseShape, NYQUIST, toneHarmonics } from './spectrum.ts';
+import { type Patch } from './patch.ts';
+import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
 
 /** The lowest and highest key that get a sample; the outer zones reach the ends of the keyboard. */
 export const LOW_KEY = 33,
@@ -109,8 +109,8 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 	}
 	if (noise > -90) {
 		// A power of 10^(noise/10) against the harmonics' 1, as they come out of the filter.
-		const contour = contourCurve(p.contour, key),
-			amps = noiseSpectrum(p, n).map((a, k) => (a ? a * 10 ** (contour(k * bin) / 20) : 0));
+		const shape = toneEq(p, key),
+			amps = noiseSpectrum(p, n).map((a, k) => (a ? a * 10 ** (shape(k * bin) / 20) : 0));
 		let power = 0;
 		for (let k = 1; k < amps.length; k++) if (amps[k]) power += (amps[k] * lp(k * bin)) ** 2;
 		const scale = Math.sqrt(10 ** (noise / 10) / power);
@@ -121,20 +121,19 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 }
 
 /**
- * The breath noise's amplitude in each bin of an FFT of length `n`, with the EQ and the formants,
- * the same for every key. The contour, which isn't, is applied per key.
+ * The breath noise's band in each bin of an FFT of length `n`, the same for every key. The EQ,
+ * the vowel and the contour are applied per key.
  */
 function noiseSpectrum(p: Patch, n: number) {
 	const { noiseLow, noiseHigh } = p.tone,
 		sr = p.output.sampleRate,
 		bin = sr / n;
-	const key = JSON.stringify(['noise', noiseLow, noiseHigh, p.eq, p.formant, sr, n]);
+	const key = JSON.stringify(['noise', noiseLow, noiseHigh, sr, n]);
 	return cached(key, () => {
-		const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
-			amps = new Float64Array(Math.floor((NYQUIST * sr) / bin));
+		const amps = new Float64Array(Math.floor((NYQUIST * sr) / bin));
 		for (let k = 1; k < amps.length; k++) {
 			const shape = noiseShape(k * bin, noiseLow, noiseHigh);
-			if (shape >= 1e-3) amps[k] = shape * 10 ** (eq(k * bin) / 20);
+			if (shape >= 1e-3) amps[k] = shape;
 		}
 		return amps;
 	});
@@ -313,7 +312,7 @@ export function buildBank(p: Patch, program: number): Built {
 	const { sampleRate, loop, seed } = p.output;
 	const toneKey = JSON.stringify([
 			{ ...p.tone, level: 0, width: 0 },
-			p.formant,
+			p.vowel,
 			p.eq,
 			p.contour,
 			p.filter,

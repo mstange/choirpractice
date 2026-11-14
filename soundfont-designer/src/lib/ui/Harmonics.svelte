@@ -14,7 +14,7 @@
 
 	/**
 	 * Per harmonic of the preview key: its level in dB before the loudness is normalized, with the
-	 * EQ, formants, contour and the filter at full dynamics, and that level without its own offset.
+	 * EQ, vowel, contour and the filter at full dynamics, and that level without its own offset.
 	 */
 	const levels = $derived.by(() => {
 		const f0 = keyFreq(previewKey),

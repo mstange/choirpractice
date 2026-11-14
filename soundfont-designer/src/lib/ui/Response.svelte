@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { eqCurve, keyFreq } from '../dsp.ts';
-	import { formantBands, type Patch } from '../patch.ts';
+	import type { Patch } from '../patch.ts';
 	import { NYQUIST, noiseShape } from '../spectrum.ts';
 	import { logX, prepare, xLog } from './canvas.ts';
 
@@ -68,11 +68,7 @@
 			ctx.setLineDash([]);
 			ctx.lineWidth = 1;
 		};
-		const eq = eqCurve(patch.eq),
-			formants = eqCurve(formantBands(patch.formant));
-		curve(formants, '#b88cf0', [4, 3]);
-		curve(eq, '#5cc08a');
-		curve((f) => eq(f) + formants(f), '#fff', [], 2);
+		curve(eqCurve(patch.eq), '#5cc08a', [], 2);
 		patch.eq.forEach((b, i) => {
 			ctx.fillStyle = i === active ? '#f0b429' : '#5cc08a';
 			ctx.beginPath();

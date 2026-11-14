@@ -11,6 +11,7 @@
 		type Patch,
 		type Vowel
 	} from './lib/patch.ts';
+	import { VOWELS } from './lib/vowel.ts';
 	import { MS_BASIC_AAHS, STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
@@ -42,7 +43,7 @@
 	$effect(() => localStorage.setItem(PROGRAM, String(program)));
 
 	const built = $derived(builder.built);
-	const VOWELS: Vowel[] = ['a', 'e', 'i', 'o', 'u'];
+	const VOWEL_NAMES: Record<Vowel, string> = { a: 'ah', e: 'eh', i: 'ee', o: 'oh', u: 'oo' };
 	const EQ_TYPES: EqType[] = ['lowshelf', 'peak', 'highshelf'];
 	const SHAPES: [string, number, number][] = [
 		['Saw', -6, 0],
@@ -263,30 +264,13 @@
 		</section>
 
 		<section>
-			<h2>EQ and formants</h2>
+			<h2>EQ</h2>
 			<Response {patch} {previewKey} />
 			<p class="hint">
-				Drag the EQ handles, scroll on one for its Q. Green is the EQ, purple dashed the formants,
-				white both. The marks at the bottom are the preview key's harmonics, blue the breath noise.
-				The EQ applies to both layers, the formants to the tone.
+				Drag the handles, scroll on one for its Q. The marks at the bottom are the preview key's
+				harmonics, blue the breath noise. The EQ applies to both layers, at the same frequencies on
+				every key.
 			</p>
-			<div class="buttons">
-				Vowel
-				{#each VOWELS as v (v)}
-					<button class:on={patch.formant.vowel === v} onclick={() => (patch.formant.vowel = v)}
-						>{v}</button
-					>
-				{/each}
-			</div>
-			<Slider label="Formants" bind:value={patch.formant.amount} min={0} max={1} step={0.05} />
-			<Slider
-				label="Formant width"
-				bind:value={patch.formant.width}
-				min={0.5}
-				max={4}
-				step={0.1}
-				unit="×"
-			/>
 			<table class="eq">
 				<tbody>
 					{#each patch.eq as band, i (i)}
@@ -309,15 +293,44 @@
 		</section>
 
 		<section>
-			<h2>Tone: spectral contour</h2>
+			<h2>Tone: vowel and spectral contour</h2>
 			<Contour {patch} {previewKey} register={contourRegister} />
 			<p class="hint">
-				Raises and lowers the tone, harmonics and breath noise, at fixed frequencies. There is a
-				contour for E2, A#3 and E5, and the keys in between mix their neighbours: draw on any; the
-				dashed line is the preview key's. Match measures the sustain of an instrument and of this
-				patch at mf, on every third key from E2 to G5, and sets the contour that brings this patch's
-				harmonics nearest the instrument's.
+				Both raise and lower the tone, harmonics and breath noise, at fixed frequencies. The vowel
+				is a vocal tract's resonances, against a neutral vowel's: a bass's on E2, a tenor's on A#3
+				and a soprano's on E5, and in between on the keys between. The contour (blue) is the rest of
+				the timbre; purple is both together on the preview key. There is one for E2, A#3 and E5, and
+				the keys in between mix their neighbours: draw on any; the dashed line is the preview key's.
+				Match measures the sustain of an instrument and of this patch at mf, on every third key from
+				E2 to G5, and sets the contour that brings this patch's harmonics nearest the instrument's,
+				with the vowel as it is. Pick the vowel that the instrument sings before matching; then
+				another vowel keeps the rest of its timbre.
 			</p>
+			<div class="buttons">
+				Vowel
+				{#each VOWELS as v (v)}
+					<button class:on={patch.vowel.vowel === v} onclick={() => (patch.vowel.vowel = v)}
+						>{VOWEL_NAMES[v]}</button
+					>
+				{/each}
+			</div>
+			<Slider
+				label="Vowel"
+				bind:value={patch.vowel.amount}
+				min={0}
+				max={1}
+				step={0.05}
+				title="How much of the vowel: 1 is a vocal tract's resonances, 0 none"
+			/>
+			<Slider
+				label="Formant width"
+				bind:value={patch.vowel.width}
+				min={0.5}
+				max={4}
+				step={0.1}
+				unit="×"
+			/>
+
 			<div class="buttons">
 				Draw
 				{#each CONTOUR_KEYS as key, g (key)}

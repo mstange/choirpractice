@@ -1,6 +1,7 @@
 // The tone's spectrum, for build.ts and the plots.
 import { eqCurve } from './dsp.ts';
-import { CONTOUR_FREQS, CONTOUR_KEYS, formantBands, type Patch } from './patch.ts';
+import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from './patch.ts';
+import { vowelCurve } from './vowel.ts';
 
 /**
  * The two neighbours that `x` falls between on the increasing `points`, and the weight of the
@@ -31,13 +32,14 @@ export function contourCurve(contour: number[][], key: number) {
 }
 
 /**
- * The gain in dB of the EQ, the formants and the contour at `key`: what shapes the tone by
+ * The gain in dB of the EQ, the vowel and the contour at `key`: what shapes the tone by
  * frequency.
  */
 export function toneEq(p: Patch, key: number) {
-	const eq = eqCurve([...p.eq, ...formantBands(p.formant)]),
+	const eq = eqCurve(p.eq),
+		vowel = vowelCurve(p.vowel, key),
 		contour = contourCurve(p.contour, key);
-	return (f: number) => eq(f) + contour(f);
+	return (f: number) => eq(f) + vowel(f) + contour(f);
 }
 
 /**
@@ -48,7 +50,7 @@ export const NYQUIST = 0.45;
 
 /**
  * The harmonics of the tone of `key` at fundamental `f0`: their frequency and amplitude. Every key is as
- * loud at full dynamics: the harmonics have a total power of 1 after the EQ, the formants, the
+ * loud at full dynamics: the harmonics have a total power of 1 after the EQ, the vowel, the
  * contour and the low-pass filter (which the synthesizer applies), so that these change the timbre and the level
  * the loudness.
  */

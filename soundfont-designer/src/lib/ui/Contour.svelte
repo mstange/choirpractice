@@ -2,6 +2,7 @@
 	import { keyFreq } from '../dsp.ts';
 	import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from '../patch.ts';
 	import { contourCurve, NYQUIST } from '../spectrum.ts';
+	import { vowelCurve } from '../vowel.ts';
 	import { logX, prepare, xLog } from './canvas.ts';
 
 	let {
@@ -63,6 +64,14 @@
 			ctx.setLineDash([]);
 			ctx.lineWidth = 1;
 		};
+		// The preview key's vowel and contour together, with its highest point at 0 dB.
+		const vowel = vowelCurve(patch.vowel, previewKey),
+			contour = contourCurve(patch.contour, previewKey),
+			both = (f: number) => vowel(f) + contour(f),
+			top = Math.max(
+				...Array.from({ length: 200 }, (_, i) => both(xLog(i * (w / 199), LO, HI, w)))
+			);
+		curve((f) => both(f) - top, '#b88cf0', 1.5);
 		// The other registers dim, the preview key's contour between them dashed, and the one that
 		// is drawn on with its points.
 		CONTOUR_KEYS.forEach((key, g) => {

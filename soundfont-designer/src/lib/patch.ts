@@ -51,8 +51,11 @@ export interface Patch {
 		aperiodicSlope: number;
 		aperiodicTilt: number;
 	};
-	/** Vocal formants, as peaks of an EQ on the tone. */
-	formant: { vowel: Vowel; amount: number; width: number };
+	/**
+	 * The vowel, on the tone: its vocal tract's resonances against a neutral vowel's, in dB times
+	 * `amount`, with the formant bandwidths times `width` (see vowel.ts).
+	 */
+	vowel: { vowel: Vowel; amount: number; width: number };
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
@@ -139,7 +142,7 @@ export const DEFAULT_PATCH: Patch = {
 		aperiodicSlope: 0,
 		aperiodicTilt: 0
 	},
-	formant: { vowel: 'a', amount: 0.6, width: 2 },
+	vowel: { vowel: 'a', amount: 0.2, width: 1 },
 	eq: [
 		{ type: 'lowshelf', freq: 150, gain: 0, q: 0.7 },
 		{ type: 'peak', freq: 800, gain: 0, q: 1 },
@@ -184,57 +187,12 @@ export function complete(p: Partial<Patch>): Patch {
 		const [low, high] = contour as number[][];
 		d.contour = [low, low.map((v, j) => (v + high[j]) / 2), high];
 	}
+	// Patches saved earlier had their formants as EQ peaks of a tenor's, which a third of the
+	// amount at half the width comes near.
+	if ('formant' in p) {
+		const { vowel, amount, width } = (p as { formant: Patch['vowel'] }).formant;
+		d.vowel = { vowel, amount: Math.round((amount / 3) * 20) / 20, width: width / 2 };
+		delete d.formant;
+	}
 	return d as unknown as Patch;
-}
-
-/** Formants of a tenor (Csound's formant table): frequency, level in dB, bandwidth. */
-export const FORMANTS: Record<Vowel, [number, number, number][]> = {
-	a: [
-		[650, 0, 80],
-		[1080, -6, 90],
-		[2650, -7, 120],
-		[2900, -8, 130],
-		[3250, -22, 140]
-	],
-	e: [
-		[400, 0, 70],
-		[1700, -14, 80],
-		[2600, -12, 100],
-		[3200, -14, 120],
-		[3580, -20, 120]
-	],
-	i: [
-		[290, 0, 40],
-		[1870, -15, 90],
-		[2800, -18, 100],
-		[3250, -20, 120],
-		[3540, -30, 120]
-	],
-	o: [
-		[400, 0, 40],
-		[800, -10, 80],
-		[2600, -12, 100],
-		[2800, -12, 120],
-		[3000, -26, 120]
-	],
-	u: [
-		[350, 0, 40],
-		[600, -20, 60],
-		[2700, -17, 100],
-		[2900, -14, 120],
-		[3300, -26, 120]
-	]
-};
-
-/** The height in dB of the strongest formant's peak at amount 1. */
-const FORMANT_PEAK = 18;
-
-/** The formants as EQ bands. */
-export function formantBands({ vowel, amount, width }: Patch['formant']): EqBand[] {
-	return FORMANTS[vowel].map(([freq, level, bw]) => ({
-		type: 'peak',
-		freq,
-		gain: amount * Math.max(0, FORMANT_PEAK + level),
-		q: freq / (bw * width)
-	}));
 }

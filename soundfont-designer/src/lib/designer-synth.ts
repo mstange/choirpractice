@@ -3,6 +3,7 @@ import { Synth, type Score } from '../../../site/src/lib/synth.svelte.ts';
 import type { MidiReply } from '../../../site/src/lib/synth-worker.ts';
 import type { DecodedSample, ScoreEvent, ScoreNote } from '../../../site/src/lib/synth-engine.ts';
 import type { Voice } from '../../../site/src/lib/types.ts';
+import { EDITING_BANK } from './patch.ts';
 
 /** The General MIDI program of the designed instrument while it is played here. */
 export const DESIGNED = 54;
@@ -84,6 +85,8 @@ export class DesignerSynth extends Synth {
 			const e = this.events.find((e) => e.data[0] === (0xb0 | first) && e.data[1] === cc);
 			if (e) this.send([0xb0, cc, e.data[2]], KEYBOARD);
 		}
+		// The keyboard plays the vowel being edited, if the designed bank has more than one.
+		this.send([0xb0, 0, EDITING_BANK], KEYBOARD);
 		await this.setProgram(KEYBOARD, this.#program, KEYBOARD_NOTES);
 	}
 

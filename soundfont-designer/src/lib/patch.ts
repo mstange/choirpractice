@@ -1,8 +1,13 @@
 // The parameters of a designed instrument, from which build.ts makes a sound bank.
+import type { Ipa } from '../../../site/src/lib/vowels.ts';
 
 export type EqType = 'lowshelf' | 'peak' | 'highshelf';
 export type EqBand = { type: EqType; freq: number; gain: number; q: number };
 export type Vowel = 'a' | 'e' | 'i' | 'o' | 'u';
+/** The bank of the preset of the vowel being edited, beside a vowel set, for the keyboard. */
+export const EDITING_BANK = 100;
+/** A vowel's formants, as `Patch['vowel']` has them: the table's, or the sung ones. */
+export type VowelFormants = Pick<Patch['vowel'], 'vowel' | 'sung' | 'measured'>;
 
 /**
  * An instrument of two layers that sound together on every note: a sustained tone, a looped
@@ -64,6 +69,12 @@ export interface Patch {
 		sung: number[];
 		measured: number[][];
 	};
+	/**
+	 * The vowels that the instrument sings in the choir app's pieces, by IPA symbol (see the choir
+	 * app's vowels.ts), each with formants of its own, at the amount and width of `vowel`. With any,
+	 * it can have a preset for each of the choir app's vowels, in its bank (see vowelSet()).
+	 */
+	vowels: Partial<Record<Ipa, VowelFormants>>;
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
@@ -151,6 +162,7 @@ export const DEFAULT_PATCH: Patch = {
 		aperiodicTilt: 0
 	},
 	vowel: { vowel: 'a', amount: 0.2, width: 1, sung: [1, 1, 1], measured: [] },
+	vowels: {},
 	eq: [
 		{ type: 'lowshelf', freq: 150, gain: 0, q: 0.7 },
 		{ type: 'peak', freq: 800, gain: 0, q: 1 },

@@ -6,8 +6,11 @@ import type { DecodedSample } from './synth-engine.ts';
 
 export type Request =
 	| { type: 'midi'; url: string }
-	/** Decodes the samples that the bank at `url` needs for these notes, [key, velocity]. */
-	| { type: 'samples'; url: string; notes: [number, number][] };
+	/** Decodes the samples that the sound bank at `url` needs for these notes. */
+	| { type: 'samples'; url: string; notes: Played[] };
+
+/** A note to decode samples for: its key and velocity, and the bank of its preset, by default 0. */
+export type Played = [key: number, velocity: number, bank?: number];
 
 export type { MidiReply };
 /** The bank, the first time it is asked for, and its samples that weren't decoded before. */
@@ -29,7 +32,7 @@ async function readMidi(url: string): Promise<MidiReply> {
 	return parseMidi(await fetchBuffer(url));
 }
 
-async function decode(url: string, notes: [number, number][]): Promise<SamplesReply> {
+async function decode(url: string, notes: Played[]): Promise<SamplesReply> {
 	await BasicSoundBank.ready;
 	if (!banks.has(url))
 		banks.set(
@@ -45,11 +48,12 @@ async function decode(url: string, notes: [number, number][]): Promise<SamplesRe
 	const entry = await banks.get(url)!;
 	const { bank, decoded } = entry,
 		buffer = entry.sent ? undefined : entry.buffer,
-		[preset] = bank.presets,
 		samples: DecodedSample[] = [];
 	entry.sent = true;
-	for (const [key, vel] of notes)
-		for (const { sample } of preset.getVoiceParameters(key, vel)) {
+	// The preset that a bank select plays, as the synthesizer picks it: the first if none is there.
+	const preset = (b = 0) => bank.presets.find((p) => p.bankMSB === b) ?? bank.presets[0];
+	for (const [key, vel, b] of notes)
+		for (const { sample } of preset(b).getVoiceParameters(key, vel)) {
 			const index = bank.samples.indexOf(sample);
 			if (decoded.has(index)) continue;
 			decoded.add(index);

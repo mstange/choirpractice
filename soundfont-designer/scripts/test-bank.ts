@@ -8,8 +8,9 @@ import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
-import { DEFAULT_PATCH, MATCH_KEYS, complete } from '../src/lib/patch.ts';
+import { DEFAULT_PATCH, EDITING_BANK, MATCH_KEYS, complete } from '../src/lib/patch.ts';
 import { Engine } from '../../site/src/lib/synth-engine.ts';
+import { VOWELS } from '../../site/src/lib/vowels.ts';
 import { compress } from '../src/lib/vorbis.ts';
 
 const RATE = 48000,
@@ -273,6 +274,81 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 	check(
 		engine.synth.midiChannels[0].midiControllers[7] >> 7 === 40,
 		"adding a bank while playing keeps the score's controllers"
+	);
+}
+
+// A vowel set: a preset per vowel of the choir app, in its bank, those of the same formants
+// sharing their tone's instrument, and the engine playing the vowel that a bank select in the
+// score gives, also after a seek.
+{
+	const p = complete({
+		...DEFAULT_PATCH,
+		name: 'Set',
+		vowels: {
+			u: { vowel: 'sung', sung: [0.54, 0.32, 0.77], measured: [] },
+			i: { vowel: 'i', sung: [1, 1, 1], measured: [] }
+		}
+	});
+	const t = performance.now();
+	const set = buildBank(p, PROGRAM, { editing: true }).bank;
+	const file = set.writeSF2({ writeDefaultModulators: true });
+	console.log(
+		`vowel set built in ${(performance.now() - t).toFixed(0)} ms: ${set.samples.length} samples, ` +
+			`${(file.byteLength / 1e6).toFixed(1)} MB`
+	);
+	const banks = set.presets.map((q) => q.bankMSB).sort((a, b) => a - b);
+	check(
+		banks.join() === [...VOWELS.keys(), EDITING_BANK].join(),
+		`a preset per vowel, and the one edited (banks ${banks.join(' ')})`
+	);
+	// a, e and o from the table (the edited vowel is the table's a), i and u as designed.
+	const tones = new Set(set.instruments.filter((x) => x.name.includes('Tone')).map((x) => x.name));
+	check(tones.size === 5, `vowels of the same formants share an instrument (${tones.size} tones)`);
+
+	const engine = new Engine(RATE);
+	const read = SoundBankLoader.fromArrayBuffer(file.slice(0));
+	engine.receive({
+		type: 'bank',
+		id: 'set',
+		buffer: file,
+		samples: read.samples.map((s, index) => ({ index, data: s.getAudioData() }))
+	});
+	const oo = VOWELS.findIndex((v) => v.ipa === 'u'),
+		ih = VOWELS.findIndex((v) => v.ipa === 'ɪ');
+	engine.receive({
+		type: 'score',
+		events: [
+			{ t: 0, data: [0xb0, 0, oo] },
+			{ t: 0, data: [0x90, 60, 80] },
+			{ t: 0.5, data: [0x80, 60, 0] },
+			{ t: 0.5, data: [0xb0, 0, ih] },
+			{ t: 0.5, data: [0x90, 62, 80] },
+			{ t: 1, data: [0x80, 62, 0] }
+		],
+		notes: [
+			{ t0: 0, t1: 0.5, ch: 0, key: 60, vel: 80, bank: oo },
+			{ t0: 0.5, t1: 1, ch: 0, key: 62, vel: 80, bank: ih }
+		]
+	});
+	engine.receive({ type: 'program', ch: 0, program: PROGRAM });
+	let frame = 0;
+	const presetAt = (pos: number) => {
+		engine.receive({ type: 'play', frame, pos, rate: 1, loop: null, seek: true });
+		for (let i = 0; i < RATE / 10; i += 128, frame += 128)
+			engine.render(frame, new Float32Array(128), new Float32Array(128));
+		return engine.synth.midiChannels[0].preset?.name;
+	};
+	const names = [presetAt(0), presetAt(0.45), presetAt(0.7), presetAt(0.2)];
+	check(
+		names.join() === ['Set oo', 'Set ih', 'Set ih', 'Set oo'].join(),
+		`the engine plays the score's vowels (${names.join(', ')})`
+	);
+	// ih and eh aren't designed: ih sings the designed i, eh the table's e.
+	const tone = (name: string) =>
+		set.presets.find((q) => q.name === `Set ${name}`)!.zones[0].instrument.name;
+	check(
+		tone('ih') === tone('ee') && tone('eh') === tone('ay') && tone('uu') === tone('oo'),
+		`a vowel not designed sings the nearest one (ih: ${tone('ih')}, eh: ${tone('eh')}, uu: ${tone('uu')})`
 	);
 }
 

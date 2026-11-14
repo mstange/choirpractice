@@ -9,7 +9,7 @@ export class Builder {
 	built = $state.raw<Built | null>(null);
 	error = $state('');
 	#worker = new Worker(new URL('./build-worker.ts', import.meta.url), { type: 'module' });
-	#waiting: { patch: Patch; program: number; key: number } | null = null;
+	#waiting: { patch: Patch; program: number; key: number; set: boolean } | null = null;
 	#busy = false;
 	#id = 0;
 	/** The exports that wait for their files, which don't wait for builds, nor builds for them. */
@@ -37,13 +37,13 @@ export class Builder {
 		};
 	}
 
-	/** Builds `patch` for playing, with a preview of `key`. */
-	build(patch: Patch, program: number, key: number) {
-		this.#waiting = { patch, program, key };
+	/** Builds `patch` for playing, with a preview of `key`, and with `set`, its vowels. */
+	build(patch: Patch, program: number, key: number, set: boolean) {
+		this.#waiting = { patch, program, key, set };
 		this.#next();
 	}
 
-	/** The SF3 file of `patch`, with its preset at `program`. */
+	/** The SF3 file of `patch`, with its presets at `program`. */
 	export(patch: Patch, program: number): Promise<ArrayBuffer> {
 		const id = this.#id++;
 		this.#worker.postMessage({ id, patch, program, export: true } satisfies BuildRequest);

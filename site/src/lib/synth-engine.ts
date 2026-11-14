@@ -5,7 +5,9 @@ const GAIN_TIME = 0.05;
 
 /**
  * A MIDI channel message other than a program change, at a time in the score in seconds. `offset`
- * is added to the message's channel, for the channels beyond the score's 16.
+ * is added to the message's channel, for the channels beyond the score's 16. Since the page sets
+ * each channel's program, a bank select (CC 0) plays the program's preset in that bank from the
+ * next note on, or the program's first preset if its bank has none there.
  *
  * A note-on with `legato` doesn't start a note of its own: the note `from` of its channel, whose
  * note-off comes just before, crossfades into it over `fade` seconds, and it goes on from where
@@ -19,7 +21,8 @@ export type ScoreEvent = {
 };
 /**
  * A note of the score, from its note-on to its note-off. A legato note has the `onset` of the
- * note that it goes on from (and that one's, and so on).
+ * note that it goes on from (and that one's, and so on). `bank` is the bank that a bank select
+ * gives its channel, if any, so that the samples of that bank's preset are decoded for it.
  */
 export type ScoreNote = {
 	t0: number;
@@ -28,6 +31,7 @@ export type ScoreNote = {
 	key: number;
 	vel: number;
 	onset?: number;
+	bank?: number;
 };
 /** A sample of a sound bank, decoded: its index in the bank's samples, and its data. */
 export type DecodedSample = { index: number; data: Float32Array };
@@ -153,11 +157,7 @@ export class Engine {
 				sample.setAudioData(data, sample.sampleRate);
 			}
 		} else if (m.type === 'program') {
-			// The program stays, whatever the score's events do.
-			const channel = this.#channel(m.ch);
-			channel.setSystemParameter('presetLock', false);
-			synth.programChange(m.ch, m.program);
-			channel.setSystemParameter('presetLock', true);
+			this.#program(m.ch, m.program);
 		} else if (m.type === 'gain') {
 			const g = this.#gains.get(m.ch);
 			if (g) g.target = m.gain;
@@ -167,7 +167,7 @@ export class Engine {
 			}
 		} else if (m.type === 'midi') {
 			this.#channel((m.data[0] & 0x0f) + (m.offset ?? 0));
-			synth.processMessage(m.data, m.offset);
+			this.#message(m.data, m.offset);
 		} else if (m.type === 'stop') {
 			// It cancels playing that hasn't started yet.
 			this.#commands = [m];
@@ -175,6 +175,25 @@ export class Engine {
 			this.#commands.push(m);
 			this.#commands.sort((a, b) => a.frame - b.frame);
 		}
+	}
+
+	/**
+	 * Plays channel `ch` with `program`, in the bank that it has, whatever the score's events do.
+	 */
+	#program(ch: number, program: number, bank?: number) {
+		const channel = this.#channel(ch);
+		if (bank !== undefined) channel.patch.bankMSB = bank;
+		channel.setSystemParameter('presetLock', false);
+		this.synth.programChange(ch, program);
+		channel.setSystemParameter('presetLock', true);
+	}
+
+	/** Plays a MIDI message: a bank select changes the channel's preset (see ScoreEvent). */
+	#message(data: number[], offset?: number) {
+		if ((data[0] & 0xf0) === 0xb0 && data[1] === 0) {
+			const ch = (data[0] & 0x0f) + (offset ?? 0);
+			this.#program(ch, this.#channel(ch).patch.program, data[2]);
+		} else this.synth.processMessage(data, offset);
 	}
 
 	/** The synthesizer's channel `ch`, which it creates, and those before it, if it hasn't yet. */
@@ -244,7 +263,7 @@ export class Engine {
 		while (this.#next < events.length && events[this.#next].t <= pos) {
 			const e = events[this.#next++];
 			if (e.legato) this.#legato(e);
-			else this.synth.processMessage(e.data, e.offset);
+			else this.#message(e.data, e.offset);
 		}
 	}
 
@@ -313,7 +332,7 @@ export class Engine {
 		this.#next = 0;
 		for (; this.#next < events.length && events[this.#next].t < pos; this.#next++) {
 			const { data, offset } = events[this.#next];
-			if ((data[0] & 0xe0) !== 0x80) synth.processMessage(data, offset); // all but note-on and note-off
+			if ((data[0] & 0xe0) !== 0x80) this.#message(data, offset); // all but note-on and note-off
 		}
 		for (const note of this.#notes) {
 			if (note.t0 >= pos || note.t1 <= pos) continue;

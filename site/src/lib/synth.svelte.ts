@@ -1,5 +1,5 @@
 import type { DecodedSample, Message, ScoreEvent, ScoreNote } from './synth-engine.ts';
-import type { MidiReply, Request, SamplesReply } from './synth-worker.ts';
+import type { MidiReply, Played, Request, SamplesReply } from './synth-worker.ts';
 import workletUrl from './synth-worklet.ts?worker&url';
 
 /** Seconds between asking the audio thread to start playing and the start. */
@@ -50,8 +50,8 @@ export class Synth {
 	#requests = new Map<number, [(reply: never) => void, (error: Error) => void]>();
 	#nextId = 0;
 	#soundfontUrl: (program: number) => string;
-	/** Per channel, the [key, velocity] of its notes, each once. */
-	#notes = new Map<number, [number, number][]>();
+	/** Per channel, its notes to decode samples for, each once. */
+	#notes = new Map<number, Played[]>();
 	/** Whether the score has been read, so that the notes of each channel are known. */
 	#scored = false;
 	/** Per channel, a count of program changes, so that only the latest one takes effect. */
@@ -97,8 +97,10 @@ export class Synth {
 			);
 			this.#post({ type: 'score', events, notes });
 			for (const n of notes) {
-				const list = this.#notes.get(n.ch) ?? [];
-				if (!list.some(([k, v]) => k === n.key && v === n.vel)) list.push([n.key, n.vel]);
+				const list = this.#notes.get(n.ch) ?? [],
+					bank = n.bank ?? 0;
+				if (!list.some(([k, v, b]) => k === n.key && v === n.vel && b === bank))
+					list.push([n.key, n.vel, bank]);
 				this.#notes.set(n.ch, list);
 			}
 			this.#scored = true;
@@ -144,7 +146,7 @@ export class Synth {
 
 	/**
 	 * Plays channel `ch` with another General MIDI program, once its samples are loaded: those that
-	 * `notes` ([key, velocity]) need, by default the channel's notes in the score.
+	 * `notes` need, by default the channel's notes in the score.
 	 */
 	protected async setProgram(ch: number, program: number, notes = this.#notes.get(ch) ?? []) {
 		const change = this.#nextChange(ch);

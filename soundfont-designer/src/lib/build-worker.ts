@@ -4,13 +4,17 @@
 // takes longer than building.
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from './build.ts';
+import { EDITING_BANK } from './patch.ts';
 import type { Patch } from './patch.ts';
 import type { DecodedSample } from '../../../site/src/lib/synth-engine.ts';
 import { compress } from './vorbis.ts';
 
-/** A build for playing, with a preview of `key`, or for exporting. */
+/**
+ * A build for playing, with a preview of `key` and, with `set`, the patch's vowels (see
+ * vowelSet()), or for exporting, which has its vowels.
+ */
 export type BuildRequest = { id: number; patch: Patch; program: number } & (
-	{ key: number } | { export: true }
+	{ key: number; set: boolean } | { export: true }
 );
 
 /** The level over time of a note rendered at some dynamics. */
@@ -62,6 +66,8 @@ function render(
 ) {
 	const synth = new SpessaSynthProcessor(RATE, { effectsEnabled: false });
 	synth.soundBankManager.addSoundBank(bank, 'b');
+	// The vowel being edited, if the bank has more than one.
+	synth.midiChannels[0].patch.bankMSB = EDITING_BANK;
 	synth.programChange(0, program);
 	synth.controllerChange(0, 2, from);
 	synth.noteOn(0, key, from);
@@ -96,7 +102,10 @@ onmessage = async ({ data }: MessageEvent<BuildRequest>) => {
 	const { id, patch, program } = data;
 	try {
 		const start = performance.now();
-		const { bank, clipped } = buildBank(patch, program);
+		const { bank, clipped } = buildBank(patch, program, {
+			set: 'export' in data || data.set,
+			editing: !('export' in data)
+		});
 		if ('export' in data) {
 			await compress(bank);
 			const exported = bank.writeSF2({ writeDefaultModulators: true });
@@ -108,7 +117,8 @@ onmessage = async ({ data }: MessageEvent<BuildRequest>) => {
 		await BasicSoundBank.ready;
 		const read = SoundBankLoader.fromArrayBuffer(file.slice(0));
 		const samples = read.samples.map((s, index) => ({ index, data: s.getAudioData() }));
-		const tone = read.presets[0]
+		const edited = read.presets.find((p) => p.bankMSB === EDITING_BANK) ?? read.presets[0];
+		const tone = edited
 			.getVoiceParameters(key, 80)
 			.find((v) => v.sample.name.startsWith('tone'))!.sample;
 		const built: Built = {

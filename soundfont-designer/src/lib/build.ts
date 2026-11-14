@@ -1,5 +1,6 @@
-// Makes a sound bank of one preset from a Patch: per zone of keys, a looped sample of the tone and
-// a one-shot sample of the attack, synthesized for the zone's middle key.
+// Makes a sound bank from a Patch: a preset of an instrument per vowel for the tone, with per zone
+// of keys a looped sample synthesized for the zone's middle key, and an instrument for the attack,
+// with a one-shot sample per zone.
 import {
 	BasicInstrument,
 	BasicPreset,
@@ -15,7 +16,8 @@ import {
 	type ModulatorCurveType
 } from 'spessasynth_core';
 import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
-import { type Patch } from './patch.ts';
+import { type Patch, type VowelFormants } from './patch.ts';
+import { vowelSet } from './vowel.ts';
 import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
 
 /** The lowest and highest key that get a sample; the outer zones reach the ends of the keyboard. */
@@ -272,8 +274,15 @@ export type Built = {
 	clipped: number[];
 };
 
-/** The sound bank of a patch, with one preset of the given General MIDI program. */
-export function buildBank(p: Patch, program: number): Built {
+/**
+ * The sound bank of a patch, with presets of the given General MIDI program: one, or one per vowel
+ * (see vowelSet()). Presets of the same formants share their tone's instrument.
+ */
+export function buildBank(
+	p: Patch,
+	program: number,
+	options: { set?: boolean; editing?: boolean } = {}
+): Built {
 	const bank = new BasicSoundBank();
 	bank.soundBankInfo = { ...bank.soundBankInfo, name: p.name, software: 'soundfont-designer' };
 	const sr = p.output.sampleRate,
@@ -302,108 +311,128 @@ export function buildBank(p: Patch, program: number): Built {
 		return { sample, attenuation: Math.round(Math.max(0, -db) * 25) };
 	};
 
-	const tone = new BasicInstrument();
-	tone.name = `${p.name}: Tone`;
-	const attack = new BasicInstrument();
-	attack.name = `${p.name}: Attack`;
 	const toneGain = REF * 10 ** (p.tone.level / 20),
 		attackGain = REF * 10 ** ((p.tone.level + p.attack.level) / 20);
-	// What the samples depend on: not the levels, which the zones' attenuation sets.
 	const { sampleRate, loop, seed } = p.output;
-	const toneKey = JSON.stringify([
-			{ ...p.tone, level: 0, width: 0 },
-			p.vowel,
-			p.eq,
-			p.contour,
-			p.filter,
+	const { env, onset, vibrato, tremolo } = p;
+
+	/** The tone's instrument, singing with `formants`. */
+	const toneInstrument = (formants: VowelFormants, name: string) => {
+		const v: Patch = { ...p, vowel: { ...p.vowel, ...formants } };
+		const tone = new BasicInstrument();
+		tone.name = `${p.name}: Tone${name ? ` ${name}` : ''}`;
+		// What the samples depend on: not the levels, which the zones' attenuation sets.
+		const toneKey = JSON.stringify([
+			{ ...v.tone, level: 0, width: 0 },
+			v.vowel,
+			v.eq,
+			v.contour,
+			v.filter,
 			sampleRate,
 			loop,
 			seed
-		]),
-		attackKey = JSON.stringify([
+		]);
+		// In stereo, the sides are unrelated signals, which panning at constant power adds up to
+		// twice the power of one sample in the middle.
+		const { width } = v.tone,
+			sides = width ? (['L', 'R'] as const) : (['M'] as const),
+			sideGain = toneGain / Math.sqrt(sides.length);
+		for (const { root, min, max } of zones(v.output.spacing)) {
+			const stored = sides.map((side, i) => {
+				const t = cached(`tone ${root} ${i} ${toneKey}`, () => toneSample(v, root, i as 0 | 1));
+				const ts = store(
+					`tone ${root}${width ? side : ''}${name ? ` ${name}` : ''}`,
+					t.data.slice(),
+					root,
+					sideGain,
+					true
+				);
+				ts.sample.pitchCorrection = t.correction;
+				const tz = tone.createZone(ts.sample);
+				tz.keyRange = { min, max };
+				tz.setGenerator(G.initialAttenuation, ts.attenuation);
+				if (width) tz.setGenerator(G.pan, Math.round((i ? 5 : -5) * width));
+				if (v.filter.harmonic < 64)
+					tz.setGenerator(
+						G.initialFilterFc,
+						Math.min(13500, absCents(keyFreq(root) * v.filter.harmonic))
+					);
+				return ts.sample;
+			});
+			if (width) stored[0].setLinkedSample(stored[1], SampleTypes.leftSample);
+		}
+		const g = tone.globalZone;
+		g.setGenerator(G.sampleModes, 1);
+		g.setGenerator(G.attackVolEnv, timecents(env.attack / 1000));
+		g.setGenerator(G.holdVolEnv, timecents(env.hold / 1000));
+		g.setGenerator(G.decayVolEnv, timecents(env.decay / 1000));
+		g.setGenerator(G.sustainVolEnv, Math.min(1440, Math.max(0, Math.round(-env.sustain * 10))));
+		g.setGenerator(G.releaseVolEnv, timecents(env.release / 1000));
+		if (onset.bright || onset.scoop) {
+			g.setGenerator(G.attackModEnv, -12000);
+			g.setGenerator(G.decayModEnv, timecents(onset.time / 1000));
+			g.setGenerator(G.sustainModEnv, 1000);
+			g.setGenerator(G.modEnvToFilterFc, Math.round(onset.bright));
+			g.setGenerator(G.modEnvToPitch, -Math.round(onset.scoop));
+		}
+		if (vibrato.depth) {
+			g.setGenerator(G.freqVibLFO, absCents(vibrato.rate));
+			g.setGenerator(G.delayVibLFO, timecents(vibrato.delay / 1000));
+			g.setGenerator(G.vibLfoToPitch, Math.round(vibrato.depth));
+		}
+		if (tremolo.depth) {
+			g.setGenerator(G.freqModLFO, absCents(tremolo.rate));
+			g.setGenerator(G.delayModLFO, timecents(vibrato.delay / 1000));
+			g.setGenerator(G.modLfoToVolume, Math.round(tremolo.depth * 10));
+		}
+		if (p.filter.q) g.setGenerator(G.initialFilterQ, Math.round(p.filter.q * 10));
+		dynamics(g, p.dynamics.source, p.dynamics.range, p.dynamics.brightness);
+		effects(g);
+		bank.addInstruments(tone);
+		return tone;
+	};
+
+	const effects = (zone: BasicZone) => {
+		if (p.output.reverb) zone.setGenerator(G.reverbEffectsSend, Math.round(p.output.reverb * 10));
+		if (p.output.chorus) zone.setGenerator(G.chorusEffectsSend, Math.round(p.output.chorus * 10));
+	};
+
+	let attack: BasicInstrument | null = null;
+	if (p.attack.enabled) {
+		attack = new BasicInstrument();
+		attack.name = `${p.name}: Attack`;
+		const attackKey = JSON.stringify([
 			{ ...p.attack, enabled: true, level: 0, velRange: 0 },
 			p.eq,
 			sampleRate,
 			seed
 		]);
-	// In stereo, the sides are unrelated signals, which panning at constant power adds up to twice
-	// the power of one sample in the middle.
-	const { width } = p.tone,
-		sides = width ? (['L', 'R'] as const) : (['M'] as const),
-		sideGain = toneGain / Math.sqrt(sides.length);
-	for (const { root, min, max } of zones(p.output.spacing)) {
-		const stored = sides.map((name, side) => {
-			const t = cached(`tone ${root} ${side} ${toneKey}`, () => toneSample(p, root, side as 0 | 1));
-			const ts = store(`tone ${root}${width ? name : ''}`, t.data.slice(), root, sideGain, true);
-			ts.sample.pitchCorrection = t.correction;
-			const tz = tone.createZone(ts.sample);
-			tz.keyRange = { min, max };
-			tz.setGenerator(G.initialAttenuation, ts.attenuation);
-			if (width) tz.setGenerator(G.pan, Math.round((side ? 5 : -5) * width));
-			if (p.filter.harmonic < 64)
-				tz.setGenerator(
-					G.initialFilterFc,
-					Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic))
-				);
-			return ts.sample;
-		});
-		if (width) stored[0].setLinkedSample(stored[1], SampleTypes.leftSample);
-		if (p.attack.enabled) {
+		for (const { root, min, max } of zones(p.output.spacing)) {
 			const data = cached(`attack ${root} ${attackKey}`, () => attackSample(p, root));
 			const as = store(`attack ${root}`, data.slice(), root, attackGain, false);
 			const az = attack.createZone(as.sample);
 			az.keyRange = { min, max };
 			az.setGenerator(G.initialAttenuation, as.attenuation);
 		}
-	}
-
-	const { env, onset, vibrato, tremolo } = p;
-	const g = tone.globalZone;
-	g.setGenerator(G.sampleModes, 1);
-	g.setGenerator(G.attackVolEnv, timecents(env.attack / 1000));
-	g.setGenerator(G.holdVolEnv, timecents(env.hold / 1000));
-	g.setGenerator(G.decayVolEnv, timecents(env.decay / 1000));
-	g.setGenerator(G.sustainVolEnv, Math.min(1440, Math.max(0, Math.round(-env.sustain * 10))));
-	g.setGenerator(G.releaseVolEnv, timecents(env.release / 1000));
-	if (onset.bright || onset.scoop) {
-		g.setGenerator(G.attackModEnv, -12000);
-		g.setGenerator(G.decayModEnv, timecents(onset.time / 1000));
-		g.setGenerator(G.sustainModEnv, 1000);
-		g.setGenerator(G.modEnvToFilterFc, Math.round(onset.bright));
-		g.setGenerator(G.modEnvToPitch, -Math.round(onset.scoop));
-	}
-	if (vibrato.depth) {
-		g.setGenerator(G.freqVibLFO, absCents(vibrato.rate));
-		g.setGenerator(G.delayVibLFO, timecents(vibrato.delay / 1000));
-		g.setGenerator(G.vibLfoToPitch, Math.round(vibrato.depth));
-	}
-	if (tremolo.depth) {
-		g.setGenerator(G.freqModLFO, absCents(tremolo.rate));
-		g.setGenerator(G.delayModLFO, timecents(vibrato.delay / 1000));
-		g.setGenerator(G.modLfoToVolume, Math.round(tremolo.depth * 10));
-	}
-	if (p.filter.q) g.setGenerator(G.initialFilterQ, Math.round(p.filter.q * 10));
-	dynamics(g, p.dynamics.source, p.dynamics.range, p.dynamics.brightness);
-
-	const a = attack.globalZone;
-	a.setGenerator(G.releaseVolEnv, timecents(env.release / 1000));
-	dynamics(a, 'velocity', p.attack.velRange, p.dynamics.brightness);
-
-	for (const zone of [g, a]) {
-		if (p.output.reverb) zone.setGenerator(G.reverbEffectsSend, Math.round(p.output.reverb * 10));
-		if (p.output.chorus) zone.setGenerator(G.chorusEffectsSend, Math.round(p.output.chorus * 10));
-	}
-
-	const preset = new BasicPreset(bank);
-	preset.name = p.name;
-	preset.program = program;
-	preset.createZone(tone);
-	bank.addInstruments(tone);
-	if (p.attack.enabled) {
-		preset.createZone(attack);
+		const a = attack.globalZone;
+		a.setGenerator(G.releaseVolEnv, timecents(env.release / 1000));
+		dynamics(a, 'velocity', p.attack.velRange, p.dynamics.brightness);
+		effects(a);
 		bank.addInstruments(attack);
 	}
-	bank.addPresets(preset);
+
+	const tones = new Map<string, BasicInstrument>();
+	for (const { bank: bankNumber, name, formants, from } of vowelSet(p, options)) {
+		const key = JSON.stringify(formants);
+		if (!tones.has(key)) tones.set(key, toneInstrument(formants, from));
+		const preset = new BasicPreset(bank);
+		preset.name = name ? `${p.name} ${name}` : p.name;
+		preset.program = program;
+		preset.bankMSB = bankNumber;
+		preset.createZone(tones.get(key)!);
+		if (attack) preset.createZone(attack);
+		bank.addPresets(preset);
+	}
 	bank.flush();
 	return { bank, clipped };
 }

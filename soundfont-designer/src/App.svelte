@@ -11,7 +11,8 @@
 		type Patch,
 		type Vowel
 	} from './lib/patch.ts';
-	import { VOWELS } from './lib/vowel.ts';
+	import { VOWELS, vowelFormants } from './lib/vowel.ts';
+	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../site/src/lib/vowels.ts';
 	import { MS_BASIC_AAHS, STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
@@ -24,13 +25,16 @@
 
 	const STORE = 'soundfont-designer:patch',
 		SAVED = 'soundfont-designer:saved',
-		PROGRAM = 'soundfont-designer:program';
+		PROGRAM = 'soundfont-designer:program',
+		SET = 'soundfont-designer:vowel-set';
 	const stored = localStorage.getItem(STORE);
 	let patch = $state<Patch>(stored ? complete(JSON.parse(stored)) : structuredClone(MS_BASIC_AAHS));
 	/** Patches saved by name. */
 	let saved = $state<Record<string, Patch>>(JSON.parse(localStorage.getItem(SAVED) ?? '{}'));
 	/** The General MIDI program of the exported file's preset. */
 	let program = $state(Number(localStorage.getItem(PROGRAM) ?? DESIGNED));
+	/** Whether the pieces sing the lyrics' vowels, each with its preset, which builds longer. */
+	let singVowels = $state(localStorage.getItem(SET) === 'true');
 	let previewKey = $state(60);
 	let synth = $state.raw<DesignerSynth | null>(null);
 	const builder = new Builder();
@@ -38,8 +42,9 @@
 	$effect(() => {
 		const p = $state.snapshot(patch) as Patch;
 		localStorage.setItem(STORE, JSON.stringify(p));
-		builder.build(p, DESIGNED, previewKey);
+		builder.build(p, DESIGNED, previewKey, singVowels);
 	});
+	$effect(() => localStorage.setItem(SET, String(singVowels)));
 	$effect(() => localStorage.setItem(SAVED, JSON.stringify(saved)));
 	$effect(() => localStorage.setItem(PROGRAM, String(program)));
 
@@ -107,6 +112,13 @@
 				'.';
 		}
 	}
+
+	/** The formants of the vowel being edited. */
+	const editedFormants = () => {
+		const { vowel, sung, measured } = $state.snapshot(patch.vowel) as Patch['vowel'];
+		return { vowel, sung, measured };
+	};
+	const sameFormants = (a: object, b: object) => JSON.stringify(a) === JSON.stringify(b);
 
 	async function importJson(e: Event & { currentTarget: HTMLInputElement }) {
 		const file = e.currentTarget.files?.[0];
@@ -368,6 +380,48 @@
 		<section>
 			<h2>Tone: sing a vowel</h2>
 			<SingVowel {patch} {synth} />
+		</section>
+
+		<section>
+			<h2>Vowels of the lyrics</h2>
+			<p class="hint">
+				The choir app sings each syllable on its vowel, from the instrument's preset for it. Keep
+				makes the vowel being edited (picked above, or sung) this one's; Edit brings it back to be
+				edited. A vowel not kept sings the nearest kept one, or Csound's table's: the arrow says
+				which. Once a vowel is kept, Export SF3 writes a preset for each.
+			</p>
+			<label class="choice"
+				><input type="checkbox" bind:checked={singVowels} /> The pieces sing the lyrics' vowels, and the
+				keyboard the vowel being edited (each build takes longer)</label
+			>
+			<table class="vowels">
+				<tbody>
+					{#each LYRIC_VOWELS as v (v.ipa)}
+						{@const { from, formants } = vowelFormants(patch, v.ipa)}
+						{@const kept = patch.vowels[v.ipa]}
+						<tr class:edited={sameFormants(formants, editedFormants())}>
+							<td>{v.name}</td>
+							<td class="dim">/{v.ipa}/ {v.word}</td>
+							<td class="dim">
+								{#if kept}{kept.vowel === 'sung' ? 'sung' : `table ${VOWEL_NAMES[kept.vowel]}`}
+								{:else if from === v.ipa}table
+								{:else}→ {LYRIC_VOWELS.find((x) => x.ipa === from)!.name}{/if}
+							</td>
+							<td>
+								<button onclick={() => (patch.vowels[v.ipa as Ipa] = editedFormants())}>Keep</button
+								>
+								<button
+									onclick={() => (patch.vowel = { ...patch.vowel, ...structuredClone(formants) })}
+									>Edit</button
+								>
+								<button disabled={!kept} onclick={() => delete patch.vowels[v.ipa as Ipa]}
+									>Forget</button
+								>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 		</section>
 
 		<section>
@@ -673,6 +727,16 @@
 	}
 	.warn {
 		color: #e8657a;
+	}
+	.vowels td {
+		padding: 1px 6px 1px 0;
+	}
+	.vowels .dim {
+		color: var(--dim);
+	}
+	.vowels tr.edited td:first-child {
+		color: var(--accent);
+		font-weight: bold;
 	}
 	footer {
 		position: fixed;

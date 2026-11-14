@@ -1,6 +1,8 @@
+import { sing } from '../../../site/src/lib/singing.ts';
 import { Synth, type Score } from '../../../site/src/lib/synth.svelte.ts';
 import type { MidiReply } from '../../../site/src/lib/synth-worker.ts';
 import type { DecodedSample, ScoreEvent, ScoreNote } from '../../../site/src/lib/synth-engine.ts';
+import type { Voice } from '../../../site/src/lib/types.ts';
 
 /** The General MIDI program of the designed instrument while it is played here. */
 export const DESIGNED = 54;
@@ -28,10 +30,12 @@ export type Part = { name: string; vocal: boolean; channels: number[] };
 
 /**
  * Plays a piece's score.mid with its vocal parts on the designed instrument (or another, to
- * compare), and the on-screen keyboard on the same instrument.
+ * compare), sung as the choir app sings them (see singing.ts), and the on-screen keyboard on the
+ * same instrument.
  */
 export class DesignerSynth extends Synth {
 	#parts: Part[];
+	#voices: Voice[];
 	/** The channels of the vocal parts that have one. */
 	#vocal: number[];
 	#program: number;
@@ -44,18 +48,21 @@ export class DesignerSynth extends Synth {
 
 	constructor(
 		parts: Part[],
+		voices: Voice[],
 		duration: number,
 		soundfontUrl: (program: number) => string,
 		program: number
 	) {
 		super(duration, soundfontUrl);
 		this.#parts = parts;
+		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
 		this.#program = program;
 		this.#bank = new Promise((resolve) => (this.#bankArrived = resolve));
 	}
 
 	protected arrange(midi: MidiReply): Score {
+		sing(midi.events, midi.notes, this.#parts, this.#voices);
 		this.events = midi.events;
 		this.notes = midi.notes;
 		for (const { t, data } of midi.events)

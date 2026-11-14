@@ -55,6 +55,7 @@
 	const playable = parts.some((p) => p.vocal && p.channels.length === 1);
 	const synth = new ChoirSynth(
 		parts,
+		voices,
 		measures[measures.length - 1],
 		(file) => mediaUrl('soundfont', file),
 		// svelte-ignore state_referenced_locally

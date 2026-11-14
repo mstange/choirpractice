@@ -4,9 +4,10 @@
 	import type { Built } from '../build-worker.ts';
 	import { DESIGNED, DesignerSynth, INSTRUMENTS, type Part } from '../designer-synth.ts';
 	import { partColor, prepare } from './canvas.ts';
+	import type { Voice } from '../../../../site/src/lib/types.ts';
 
 	type Season = { id: string; title: string; pieces: { slug: string; label: string }[] };
-	type Piece = { title: string; parts: Part[]; measures: number[] };
+	type Piece = { title: string; parts: Part[]; voices: Voice[]; measures: number[] };
 
 	let { built, synth = $bindable() }: { built: Built | null; synth: DesignerSynth | null } =
 		$props();
@@ -58,6 +59,7 @@
 				piece = p;
 				s = new DesignerSynth(
 					p.parts,
+					p.voices,
 					p.measures.at(-1)!,
 					(program) => mediaUrl('soundfont', `${program}.sf3`),
 					untrack(() => voice)

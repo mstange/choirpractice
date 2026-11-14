@@ -6,10 +6,29 @@ const GAIN_TIME = 0.05;
 /**
  * A MIDI channel message other than a program change, at a time in the score in seconds. `offset`
  * is added to the message's channel, for the channels beyond the score's 16.
+ *
+ * A note-on with `legato` doesn't start a note of its own: the note `from` of its channel, whose
+ * note-off comes just before, crossfades into it over `fade` seconds, and it goes on from where
+ * that note's envelopes and samples have got to, without an attack.
  */
-export type ScoreEvent = { t: number; data: number[]; offset?: number };
-/** A note of the score, from its note-on to its note-off. */
-export type ScoreNote = { t0: number; t1: number; ch: number; key: number; vel: number };
+export type ScoreEvent = {
+	t: number;
+	data: number[];
+	offset?: number;
+	legato?: { from: number; fade: number };
+};
+/**
+ * A note of the score, from its note-on to its note-off. A legato note has the `onset` of the
+ * note that it goes on from (and that one's, and so on).
+ */
+export type ScoreNote = {
+	t0: number;
+	t1: number;
+	ch: number;
+	key: number;
+	vel: number;
+	onset?: number;
+};
 /** A sample of a sound bank, decoded: its index in the bank's samples, and its data. */
 export type DecodedSample = { index: number; data: Float32Array };
 
@@ -45,7 +64,12 @@ type PlayCommand =
 /** The fields of spessasynth_core's internal voices that starting a note part-way through needs. */
 interface Voice {
 	isActive: boolean;
+	isInRelease: boolean;
+	channel: number;
+	midiNote: number;
+	gainModifier: number;
 	startTime: number;
+	releaseStartTime: number;
 	vibLfoStartTime: number;
 	modLfoStartTime: number;
 	targetKey: number;
@@ -62,7 +86,11 @@ interface Voice {
 		loopLength: number;
 		hasLooped: boolean;
 	};
+	exclusiveRelease(currentTime: number): void;
 }
+
+/** A voice's gain going from `gain` to silence, or from silence to `gain`, in the legato. */
+type Fade = { voice: Voice; gain: number; start: number; seconds: number; out: boolean };
 
 /**
  * Plays a score with spessasynth_core, sample-exactly: each event happens on the first frame at
@@ -84,10 +112,16 @@ export class Engine {
 	#play: { pos: number; rate: number; loop: [number, number] | null } | null = null;
 	/** The next event to dispatch. */
 	#next = 0;
+	#fades: Fade[] = [];
 
 	constructor(sampleRate: number) {
 		this.#rate = sampleRate;
 		this.synth = new SpessaSynthProcessor(sampleRate, { effectsEnabled: true });
+	}
+
+	/** spessasynth_core's pool of voices, active or not. */
+	get #voices() {
+		return (this.synth as unknown as { voices: Voice[] }).voices;
 	}
 
 	receive(m: Message) {
@@ -178,6 +212,7 @@ export class Engine {
 				const frames = Math.ceil(((until - play.pos) / play.rate) * this.#rate);
 				end = Math.min(end, i + Math.max(1, frames));
 			}
+			if (this.#fades.length) this.#fade();
 			this.synth.process(left, right, i, end - i);
 			if (play) {
 				play.pos += (play.rate * (end - i)) / this.#rate;
@@ -193,6 +228,7 @@ export class Engine {
 	#apply(c: PlayCommand) {
 		if (c.type === 'stop') {
 			this.#play = null;
+			this.#fades = [];
 			this.synth.stopAll(false);
 		} else if (!c.seek && this.#play) {
 			this.#play.rate = c.rate;
@@ -206,9 +242,62 @@ export class Engine {
 	#dispatch(pos: number) {
 		const events = this.#events;
 		while (this.#next < events.length && events[this.#next].t <= pos) {
-			const { data, offset } = events[this.#next++];
-			this.synth.processMessage(data, offset);
+			const e = events[this.#next++];
+			if (e.legato) this.#legato(e);
+			else this.synth.processMessage(e.data, e.offset);
 		}
+	}
+
+	/** Plays a legato note-on (see ScoreEvent). */
+	#legato({ data, offset, legato }: ScoreEvent) {
+		const synth = this.synth,
+			now = synth.currentTime,
+			ch = (data[0] & 0x0f) + (offset ?? 0),
+			{ from, fade } = legato!;
+		// The note-off of `from` has just released its voices, which haven't rendered since.
+		const held = this.#voices.filter(
+			(v) =>
+				v.isActive &&
+				v.channel === ch &&
+				v.midiNote === from &&
+				!v.isInRelease &&
+				v.releaseStartTime !== Infinity
+		);
+		if (!held.length) return synth.processMessage(data, offset);
+		const since = now - Math.min(...held.map((v) => v.startTime));
+		this.#fades = this.#fades.filter((f) => !held.includes(f.voice));
+		for (const v of held) {
+			v.releaseStartTime = Infinity;
+			this.#fades.push({ voice: v, gain: v.gainModifier, start: now, seconds: fade, out: true });
+		}
+		for (const v of this.#start(() => synth.processMessage(data, offset))) {
+			advance(v, since, this.#rate);
+			this.#fades.push({ voice: v, gain: v.gainModifier, start: now, seconds: fade, out: false });
+			v.gainModifier = 0;
+		}
+	}
+
+	/** Calls `noteOn`, and returns the voices that it started. */
+	#start(noteOn: () => void) {
+		const voices = this.#voices,
+			before = new Set(voices.filter((v) => v.isActive));
+		noteOn();
+		return voices.filter((v) => v.isActive && !before.has(v));
+	}
+
+	/**
+	 * Moves the legato's gains on, at equal power, since the notes are at different pitches. A
+	 * voice that has faded out ends.
+	 */
+	#fade() {
+		const now = this.synth.currentTime;
+		this.#fades = this.#fades.filter((f) => {
+			const x = Math.min(1, (now - f.start) / f.seconds);
+			f.voice.gainModifier = f.gain * Math.sin(((f.out ? 1 - x : x) * Math.PI) / 2);
+			if (x < 1) return true;
+			if (f.out) f.voice.exclusiveRelease(now);
+			return false;
+		});
 	}
 
 	/**
@@ -220,18 +309,17 @@ export class Engine {
 		const synth = this.synth,
 			events = this.#events;
 		synth.stopAll(false);
+		this.#fades = [];
 		this.#next = 0;
 		for (; this.#next < events.length && events[this.#next].t < pos; this.#next++) {
 			const { data, offset } = events[this.#next];
 			if ((data[0] & 0xe0) !== 0x80) synth.processMessage(data, offset); // all but note-on and note-off
 		}
-		const voices = (synth as unknown as { voices: Voice[] }).voices;
 		for (const note of this.#notes) {
 			if (note.t0 >= pos || note.t1 <= pos) continue;
-			const before = new Set(voices.filter((v) => v.isActive));
-			synth.noteOn(note.ch, note.key, note.vel);
-			for (const v of voices)
-				if (v.isActive && !before.has(v)) advance(v, (pos - note.t0) / rate, this.#rate);
+			const since = (pos - (note.onset ?? note.t0)) / rate;
+			for (const v of this.#start(() => synth.noteOn(note.ch, note.key, note.vel)))
+				advance(v, since, this.#rate);
 		}
 	}
 }

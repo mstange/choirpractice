@@ -1,7 +1,8 @@
 import { soundfontFile } from './instruments.ts';
+import { sing } from './singing.ts';
 import { Synth, type Score } from './synth.svelte.ts';
 import type { MidiReply } from './synth-worker.ts';
-import type { Part } from './types.ts';
+import type { Part, Voice } from './types.ts';
 
 /** The General MIDI program that can double the vocal parts. */
 const PIANO = 0;
@@ -37,10 +38,12 @@ const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32))
  * of the user's choice.
  *
  * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's 16,
- * which stays silent until setPianoGain().
+ * which stays silent until setPianoGain(). The vocal parts sing their melismas legato (see
+ * singing.ts); the piano strikes every note.
  */
 export class ChoirSynth extends Synth {
 	#parts: Part[];
+	#voices: Voice[];
 	/** Per vocal part, the channel of its piano. */
 	#pianos = new Map<string, number>();
 	/**
@@ -52,12 +55,14 @@ export class ChoirSynth extends Synth {
 
 	constructor(
 		parts: Part[],
+		voices: Voice[],
 		duration: number,
 		soundfontUrl: (file: string) => string,
 		vocalProgram: number
 	) {
 		super(duration, (program) => soundfontUrl(soundfontFile(program)));
 		this.#parts = parts;
+		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
 		this.#vocalProgram = vocalProgram;
 		// Channel 9 of every 16 plays drum kits.
@@ -93,6 +98,7 @@ export class ChoirSynth extends Synth {
 				.filter((n) => piano.has(n.ch))
 				.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
 		);
+		sing(doubled, notes, this.#parts, this.#voices);
 		const played = channelPrograms(this.#parts, programs, this.#vocalProgram);
 		for (const ch of this.#pianos.values()) played.set(ch, PIANO);
 		return { events: doubled, notes, programs: played };

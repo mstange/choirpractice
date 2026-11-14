@@ -265,8 +265,8 @@
 {#if error}<p class="warn">{error}</p>{/if}
 {#if last}
 	<p class="hint">
-		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.error > MAX_ERROR}<span class="warn">
-				— a poor fit: try again, more steadily</span
+		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.error > MAX_ERROR}<span class="warn"
+				>{' — a poor fit: try again, more steadily'}</span
 			>{/if}.
 	</p>
 {/if}
@@ -295,6 +295,9 @@
 						class:dim={!own}
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
+						title={own?.measured.length
+							? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
+							: undefined}
 					>
 						{#if !TABLE_VOWELS[v.ipa]}<option value="">same as {nameOf(borrowed(v.ipa))}</option
 							>{/if}
@@ -308,9 +311,6 @@
 						title={v.ipa !== 'a' && !ah ? 'Sing "ah" first' : `Sing ${v.name} as in ${v.word}`}
 						onclick={() => sing(v.ipa)}>{busy === v.ipa ? 'Singing…' : 'Sing'}</button
 					>
-				</td>
-				<td class="dim">
-					{#if own?.measured.length}F1–F3 {own.measured[1].join(', ')} Hz{/if}
 				</td>
 			</tr>
 		{/each}
@@ -343,6 +343,10 @@
 	}
 	.vowels td {
 		padding: 1px 6px 1px 0;
+		white-space: nowrap;
+	}
+	.vowels select {
+		width: 100%;
 	}
 	.vowels .selected {
 		background: #2c303a;

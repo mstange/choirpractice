@@ -53,7 +53,13 @@ const singing = (vowel: Vowel, name: string) =>
 export const STARTING_POINTS: Patch[] = [
 	MS_BASIC_AAHS,
 	singing('o', 'Choir Ohs'),
-	singing('u', 'Choir Uuus'),
+	// The vowel that the user sang as "oo": F1 and F2 near each other, low, which the table's oo
+	// was too muted and unclear beside. The formants it came from weren't kept.
+	complete({
+		...MS_BASIC_AAHS,
+		name: 'Choir Uuus',
+		vowel: { ...MS_BASIC_AAHS.vowel, vowel: 'sung', sung: [0.54, 0.32, 0.77] }
+	}),
 	d,
 	complete({
 		name: 'Soft Aah',

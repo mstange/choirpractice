@@ -55,8 +55,15 @@ export interface Patch {
 	 * The vowel, on the tone: its vocal tract's resonances against a neutral vowel's, in dB times
 	 * `amount`, with the formant bandwidths times `width` (see vowel.ts). The sung vowel is a's
 	 * formants F1 to F3 times `sung`: those of a vowel that the user sang, against their a's.
+	 * `measured` has the formants in Hz that those came from, of the a and of the vowel, if known.
 	 */
-	vowel: { vowel: Vowel | 'sung'; amount: number; width: number; sung: number[] };
+	vowel: {
+		vowel: Vowel | 'sung';
+		amount: number;
+		width: number;
+		sung: number[];
+		measured: number[][];
+	};
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
@@ -143,7 +150,7 @@ export const DEFAULT_PATCH: Patch = {
 		aperiodicSlope: 0,
 		aperiodicTilt: 0
 	},
-	vowel: { vowel: 'a', amount: 0.2, width: 1, sung: [1, 1, 1] },
+	vowel: { vowel: 'a', amount: 0.2, width: 1, sung: [1, 1, 1], measured: [] },
 	eq: [
 		{ type: 'lowshelf', freq: 150, gain: 0, q: 0.7 },
 		{ type: 'peak', freq: 800, gain: 0, q: 1 },
@@ -196,7 +203,8 @@ export function complete(p: Partial<Patch>): Patch {
 			vowel,
 			amount: Math.round((amount / 3) * 20) / 20,
 			width: width / 2,
-			sung: [1, 1, 1]
+			sung: [1, 1, 1],
+			measured: []
 		};
 		delete d.formant;
 	}

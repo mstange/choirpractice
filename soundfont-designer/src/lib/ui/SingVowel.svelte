@@ -88,6 +88,7 @@
 		if (step === 'vowel' && fits.ah) {
 			const ah = fits.ah.formants;
 			patch.vowel.sung = r.formants.map((f, i) => Math.round((f / ah[i]) * 100) / 100);
+			patch.vowel.measured = [ah, r.formants];
 			patch.vowel.vowel = 'sung';
 		}
 	}
@@ -178,11 +179,12 @@
 		</p>
 	{/if}
 {/each}
-{#if fits.vowel && fits.ah}
-	<p class="hint">
-		The sung vowel moves a's formants by ×{patch.vowel.sung.join(', ×')}.
-	</p>
-{/if}
+<p class="hint">
+	The sung vowel moves a's formants by ×{patch.vowel.sung.join(
+		', ×'
+	)}{#if patch.vowel.measured.length}: F1 to F3 of “ah” {patch.vowel.measured[0].join(', ')} Hz, of the
+		vowel {patch.vowel.measured[1].join(', ')} Hz{/if}.
+</p>
 
 <style>
 	.row {

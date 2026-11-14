@@ -1,5 +1,5 @@
 // Patches to start from, as changes to the default patch.
-import { DEFAULT_PATCH, complete, type Patch } from './patch.ts';
+import { DEFAULT_PATCH, complete, type Patch, type Vowel } from './patch.ts';
 
 const d = DEFAULT_PATCH;
 
@@ -22,7 +22,7 @@ export const MS_BASIC_AAHS = complete({
 		aperiodicSlope: -11,
 		aperiodicTilt: 7
 	},
-	vowel: { vowel: 'a', amount: 1, width: 1.5 },
+	vowel: { ...d.vowel, amount: 1, width: 1.5 },
 	contour: [
 		[
 			-32, -32.5, -33, -34, -31, -24.5, -20, -16.5, -9, 0, -7.5, -24, -23.5, -27.5, -36, -36.5,
@@ -47,13 +47,13 @@ export const MS_BASIC_AAHS = complete({
 });
 
 /** MS Basic Aahs singing another vowel: the same contour, which is what isn't the vowel. */
-const sung = (vowel: Patch['vowel']['vowel'], name: string) =>
+const singing = (vowel: Vowel, name: string) =>
 	complete({ ...MS_BASIC_AAHS, name, vowel: { ...MS_BASIC_AAHS.vowel, vowel } });
 
 export const STARTING_POINTS: Patch[] = [
 	MS_BASIC_AAHS,
-	sung('o', 'Choir Ohs'),
-	sung('u', 'Choir Uuus'),
+	singing('o', 'Choir Ohs'),
+	singing('u', 'Choir Uuus'),
 	d,
 	complete({
 		name: 'Soft Aah',
@@ -66,7 +66,7 @@ export const STARTING_POINTS: Patch[] = [
 	complete({
 		name: 'Piano + Pad',
 		tone: { ...d.tone, level: -3, tilt: -12, voices: 2, detune: 8 },
-		vowel: { vowel: 'o', amount: 0.2, width: 3 },
+		vowel: { ...d.vowel, vowel: 'o', amount: 0.2, width: 3 },
 		env: { ...d.env, attack: 160, decay: 600, sustain: 0 },
 		onset: { time: 90, bright: 0, scoop: 0 },
 		vibrato: { ...d.vibrato, depth: 0 },

@@ -19,6 +19,7 @@
 	import Player from './lib/ui/Player.svelte';
 	import Preview from './lib/ui/Preview.svelte';
 	import Response from './lib/ui/Response.svelte';
+	import SingVowel from './lib/ui/SingVowel.svelte';
 	import Slider from './lib/ui/Slider.svelte';
 
 	const STORE = 'soundfont-designer:patch',
@@ -43,7 +44,14 @@
 	$effect(() => localStorage.setItem(PROGRAM, String(program)));
 
 	const built = $derived(builder.built);
-	const VOWEL_NAMES: Record<Vowel, string> = { a: 'ah', e: 'eh', i: 'ee', o: 'oh', u: 'oo' };
+	const VOWEL_NAMES: Record<Vowel | 'sung', string> = {
+		a: 'ah',
+		e: 'eh',
+		i: 'ee',
+		o: 'oh',
+		u: 'oo',
+		sung: 'sung'
+	};
 	const EQ_TYPES: EqType[] = ['lowshelf', 'peak', 'highshelf'];
 	const SHAPES: [string, number, number][] = [
 		['Saw', -6, 0],
@@ -308,7 +316,7 @@
 			</p>
 			<div class="buttons">
 				Vowel
-				{#each VOWELS as v (v)}
+				{#each [...VOWELS, 'sung' as const] as v (v)}
 					<button class:on={patch.vowel.vowel === v} onclick={() => (patch.vowel.vowel = v)}
 						>{VOWEL_NAMES[v]}</button
 					>
@@ -355,6 +363,11 @@
 				>
 			</div>
 			{#if matchResult}<p class="hint">{matchResult}</p>{/if}
+		</section>
+
+		<section>
+			<h2>Tone: sing a vowel</h2>
+			<SingVowel {patch} {synth} />
 		</section>
 
 		<section>

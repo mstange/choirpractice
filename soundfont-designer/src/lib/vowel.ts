@@ -80,6 +80,10 @@ export const REGISTER_VOICES = ['bass', 'tenor', 'soprano'];
 
 export const VOWELS: Vowel[] = ['a', 'e', 'i', 'o', 'u'];
 
+/** The formant frequencies of every voice and vowel of the table. */
+export const vowelTable = () =>
+	Object.values(TABLE).flatMap((voice) => VOWELS.map((v) => voice[v][0]));
+
 const geomean = (a: number[]) => Math.exp(a.reduce((s, v) => s + Math.log(v), 0) / a.length);
 
 /** Per register, the formants of each vowel, and of the neutral vowel: their geometric mean. */
@@ -94,7 +98,7 @@ const REGISTERS = REGISTER_VOICES.map((voice) => {
 });
 
 /** The gain of a cascade of resonators, 1 at 0 Hz, at `f`. */
-function cascade({ freq, bw }: Formants, f: number) {
+export function cascade({ freq, bw }: Formants, f: number) {
 	let g = 1;
 	for (let i = 0; i < freq.length; i++) {
 		const s = Math.PI * bw[i],
@@ -122,11 +126,13 @@ function formants(v: Vowel | 'neutral', key: number, width: number): Formants {
 
 /**
  * The vowel's gain in dB at `key` as a function of frequency: its vocal tract's against a neutral
- * one's of the same voice, times the amount.
+ * one's of the same voice, times the amount. The sung vowel has the formants of a, F1 to F3 moved
+ * by the ratios of the user's vowel to their a, so that each register keeps its voice.
  */
-export function vowelCurve({ vowel, amount, width }: Patch['vowel'], key: number) {
+export function vowelCurve({ vowel, amount, width, sung }: Patch['vowel'], key: number) {
 	if (amount === 0) return () => 0;
-	const fv = formants(vowel, key, width),
+	const fv = formants(vowel === 'sung' ? 'a' : vowel, key, width),
 		fn = formants('neutral', key, width);
+	if (vowel === 'sung') fv.freq = fv.freq.map((f, i) => f * (sung[i] ?? 1));
 	return (f: number) => amount * 20 * Math.log10(cascade(fv, f) / cascade(fn, f));
 }

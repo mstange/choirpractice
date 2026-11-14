@@ -1,10 +1,11 @@
+import { mediaUrl } from '../../../site/src/lib/pieces.ts';
 import type { MatchReply, MatchRequest } from './match-worker.ts';
 import type { Patch } from './patch.ts';
 
-/** Matches `patch`'s contour to the instrument at `program` of media/soundfont/, in a worker. */
+/** Matches `patch`'s contour to the instrument at `program` of MS Basic, in a worker. */
 export function match(patch: Patch, program: number): Promise<MatchReply> {
 	const worker = new Worker(new URL('./match-worker.ts', import.meta.url), { type: 'module' });
-	const url = new URL(`media/soundfont/${program}.sf3`, location.href).href;
+	const url = new URL(mediaUrl('soundfont', `${program}.sf3`), location.href).href;
 	return new Promise((resolve) => {
 		worker.onmessage = ({ data }: MessageEvent<MatchReply>) => {
 			worker.terminate();

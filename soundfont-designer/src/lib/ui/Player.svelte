@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { loadSeason, mediaUrl, visitedSeasons } from '../../../../site/src/lib/pieces.ts';
 	import type { Built } from '../build-worker.ts';
 	import { DESIGNED, DesignerSynth, INSTRUMENTS, type Part } from '../designer-synth.ts';
 	import { partColor, prepare } from './canvas.ts';
@@ -28,10 +29,17 @@
 	let now = $state(0);
 	let error = $state('');
 
-	fetch('media/seasons.json')
-		.then((r) => r.json())
-		.then((s) => (seasons = s))
-		.catch((e) => (error = `No seasons: ${e}`));
+	// The seasons that the choir app knows: the demo and those opened before, which it keeps in
+	// localStorage (shared with this page where both are served from one origin), and with `npm run
+	// dev` all those in media/.
+	(async () => {
+		const local: string[] = import.meta.env.DEV
+			? await fetch('media/seasons.json').then((r) => r.json())
+			: [];
+		const ids = [...new Set(['demo', ...visitedSeasons(), ...local])];
+		const loaded = await Promise.all(ids.map((id) => loadSeason(id, fetch).catch(() => null)));
+		seasons = ids.flatMap((id, i) => (loaded[i] ? [{ id, ...loaded[i] }] : []));
+	})().catch((e) => (error = `No seasons: ${e}`));
 
 	$effect(() => {
 		localStorage.setItem(STORE, JSON.stringify({ choice, voice, focus, others, accompaniment }));
@@ -39,11 +47,11 @@
 
 	// A new synthesizer for each piece.
 	$effect(() => {
-		const base = `media/${choice}/`;
+		const [season, slug] = choice.split('/');
 		let s: DesignerSynth | null = null,
 			cancelled = false;
 		error = '';
-		fetch(`${base}piece.json`)
+		fetch(mediaUrl(season, `${slug}/piece.json`))
 			.then((r) => (r.ok ? r.json() : Promise.reject(`${r.url}: ${r.status}`)))
 			.then((p: Piece) => {
 				if (cancelled) return;
@@ -51,11 +59,11 @@
 				s = new DesignerSynth(
 					p.parts,
 					p.measures.at(-1)!,
-					(program) => `media/soundfont/${program}.sf3`,
+					(program) => mediaUrl('soundfont', `${program}.sf3`),
 					untrack(() => voice)
 				);
 				synth = s;
-				s.load(`${base}score.mid`);
+				s.load(mediaUrl(season, `${slug}/score.mid`));
 			})
 			.catch((e) => (error = String(e)));
 		return () => {

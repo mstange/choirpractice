@@ -1,6 +1,6 @@
 # Soundfont Designer
 
-A web page for designing an instrument for [choirpractice-app](../choirpractice-app), synthesized into a SoundFont file, while listening to it in the choir app's pieces.
+A web page for designing an instrument for the choir app ([`../site`](../site)), synthesized into a SoundFont file, while listening to it in the choir app's pieces.
 
 MS Basic's instruments are a poor fit for following a part: the piano has a clear attack but dies away during long notes, and Choir Aahs sustains but has almost no attack. Neither follows a crescendo during a held note, because MuseScore exports the dynamics, hairpins included, as CC2 (breath controller), which no default SF2 modulator responds to. The velocity only says how loud a note starts.
 
@@ -16,7 +16,9 @@ npm install
 npm run dev
 ```
 
-The page plays the pieces of the choir app's `media/` directory, `../choirpractice-app/media` unless `MEDIA` names another (`MEDIA=/path/to/media npm run dev`). It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
+The choir app (`../site`) needs its own `npm install` too: the page plays with its synthesizer.
+
+The page plays the pieces that the choir app knows: the demo, and the seasons that the choir app opened before, which it keeps in `localStorage`. Deployed at `choirpractice.app/soundfont-designer/`, the page shares the choir app's `localStorage`, and fetches from the same media host (`VITE_MEDIA_BASE`). With `npm run dev`, it also offers all seasons in `../media` (or the directory that `MEDIA` names: `MEDIA=/path/to/media npm run dev`), which it serves at `media/`. It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
 
 - `npm test` builds the default patch, writes it as SF2 and SF3, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
 - `node scripts/spectrum.ts [--match] [preset or patch JSON] [keys]` compares the sustain of MS Basic's Choir Aahs with a patch's, as spessasynth renders them: per harmonic its level, the noise beside it and its spread in cents, and how a strong harmonic moves over time. With `--match`, it first matches the patch's contour to Choir Aahs, and measures how near that brought it.

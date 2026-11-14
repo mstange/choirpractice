@@ -89,34 +89,48 @@ const five = ([f1, f2, f3]: number[]) => [
 
 /**
  * How far the levels of `frames` are from those of formants F1 to F3, in dB rms, with the best
- * gain for each frame and the best tilt per octave of frequency.
+ * gain for each frame and the best slope for the voice and the microphone: a tilt per octave of
+ * frequency, and a curvature, since a real voice through a laptop's microphone rises against a
+ * straight tilt at both ends (by 10 dB around 200 Hz in the user's "ah"). With a straight tilt,
+ * the user's "ah" sung over half its range fitted F1 at 200–260 Hz instead of 625.
  */
 function misfit(frames: Frame[], formants: number[]) {
 	const fr = { freq: five(formants), bw: BANDWIDTHS };
-	// Least squares of r = gain(frame) + tilt·x, with x the octaves of the frequency: the tilt from
-	// the deviations of r and x from their frame's means, then the gains.
+	// Least squares of r = gain(frame) + a·x + b·x², with x the octaves of the frequency: a and b
+	// from the deviations of r, x and x² from their frame's means, then the gains.
 	const rs: number[][] = [],
-		xs: number[][] = [];
-	let sxx = 0,
-		sxr = 0;
+		xs: [number, number][][] = [];
+	let s11 = 0,
+		s12 = 0,
+		s22 = 0,
+		s1r = 0,
+		s2r = 0;
 	for (const { freq, db } of frames) {
 		const r = db.map((d, i) => d - 20 * Math.log10(cascade(fr, freq[i]))),
 			x = freq.map((f) => Math.log2(f / 1000));
-		const mr = r.reduce((s, v) => s + v, 0) / r.length,
-			mx = x.reduce((s, v) => s + v, 0) / x.length;
-		r.forEach((v, i) => {
-			sxx += (x[i] - mx) ** 2;
-			sxr += (x[i] - mx) * (v - mr);
+		const mean = (v: number[]) => v.reduce((s, e) => s + e, 0) / v.length,
+			mr = mean(r),
+			m1 = mean(x),
+			m2 = mean(x.map((v) => v * v));
+		const dr = r.map((v) => v - mr),
+			dx = x.map((v): [number, number] => [v - m1, v * v - m2]);
+		dx.forEach(([a, b], i) => {
+			s11 += a * a;
+			s12 += a * b;
+			s22 += b * b;
+			s1r += a * dr[i];
+			s2r += b * dr[i];
 		});
-		rs.push(r.map((v) => v - mr));
-		xs.push(x.map((v) => v - mx));
+		rs.push(dr);
+		xs.push(dx);
 	}
-	const tilt = sxx ? sxr / sxx : 0;
+	const det = s11 * s22 - s12 * s12,
+		[a, b] = det > 1e-9 ? [(s22 * s1r - s12 * s2r) / det, (s11 * s2r - s12 * s1r) / det] : [0, 0];
 	let sum = 0,
 		count = 0;
 	rs.forEach((r, j) =>
 		r.forEach((v, i) => {
-			sum += (v - tilt * xs[j][i]) ** 2;
+			sum += (v - a * xs[j][i][0] - b * xs[j][i][1]) ** 2;
 			count++;
 		})
 	);

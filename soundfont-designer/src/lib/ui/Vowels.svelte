@@ -30,9 +30,13 @@
 		LONGEST = 30;
 	const bandOf = (f: number) => Math.floor(8 * Math.log2(f / LOWEST)),
 		bandFreq = (i: number) => LOWEST * 2 ** (i / 8);
-	/** The fewest frames with a clear pitch that a fit is made from, and the most error trusted. */
+	/**
+	 * The fewest frames with a clear pitch that a fit is made from, and the largest difference of
+	 * the formants between the fits of the lower and upper pitches that is trusted: Chimera's
+	 * vowels differ by up to 15%, and the user's "ah" fitted with a straight tilt by over 50%.
+	 */
 	const MIN_FRAMES = 100,
-		MAX_ERROR = 6;
+		MAX_SPREAD = 0.2;
 
 	const nameOf = (ipa: Ipa) => LYRIC_VOWELS.find((v) => v.ipa === ipa)!.name;
 	/** The table's vowels by the name of the choir app's vowel that they are. */
@@ -231,8 +235,8 @@
 	});
 
 	const describe = (r: SungReply) =>
-		`F1 ${r.formants[0]}, F2 ${r.formants[1]}, F3 ${r.formants[2]} Hz, from ${noteName(r.low)} to ${noteName(r.high)}, ` +
-		`${r.error.toFixed(1)} dB from the fit`;
+		`F1 ${r.formants[0]}, F2 ${r.formants[1]}, F3 ${r.formants[2]} Hz, from ${noteName(r.low)} to ${noteName(r.high)}; ` +
+		`the lower and upper pitches agree within ${Math.round(r.spread * 100)}%`;
 </script>
 
 <p class="hint">
@@ -299,8 +303,8 @@
 {#if error}<p class="warn">{error}</p>{/if}
 {#if last}
 	<p class="hint">
-		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.error > MAX_ERROR}<span class="warn"
-				>{' — a poor fit: try again'}</span
+		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.spread > MAX_SPREAD}<span class="warn"
+				>{' — so the formants depend on which pitches were sung: try again, over more pitches'}</span
 			>{/if}.
 	</p>
 {/if}

@@ -8,11 +8,8 @@
 		MATCH_KEYS,
 		complete,
 		type EqType,
-		type Patch,
-		type Vowel
+		type Patch
 	} from './lib/patch.ts';
-	import { VOWELS, vowelFormants } from './lib/vowel.ts';
-	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../site/src/lib/vowels.ts';
 	import { MS_BASIC_AAHS, STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
@@ -20,8 +17,8 @@
 	import Player from './lib/ui/Player.svelte';
 	import Preview from './lib/ui/Preview.svelte';
 	import Response from './lib/ui/Response.svelte';
-	import SingVowel from './lib/ui/SingVowel.svelte';
 	import Slider from './lib/ui/Slider.svelte';
+	import Vowels from './lib/ui/Vowels.svelte';
 
 	const STORE = 'soundfont-designer:patch',
 		SAVED = 'soundfont-designer:saved',
@@ -49,14 +46,6 @@
 	$effect(() => localStorage.setItem(PROGRAM, String(program)));
 
 	const built = $derived(builder.built);
-	const VOWEL_NAMES: Record<Vowel | 'sung', string> = {
-		a: 'ah',
-		e: 'eh',
-		i: 'ee',
-		o: 'oh',
-		u: 'oo',
-		sung: 'sung'
-	};
 	const EQ_TYPES: EqType[] = ['lowshelf', 'peak', 'highshelf'];
 	const SHAPES: [string, number, number][] = [
 		['Saw', -6, 0],
@@ -112,12 +101,6 @@
 				'.';
 		}
 	}
-
-	/** The formants of the vowel being edited. */
-	const editedFormants = () => {
-		const { vowel, sung, measured } = $state.snapshot(patch.vowel) as Patch['vowel'];
-		return { vowel, sung, measured };
-	};
 
 	async function importJson(e: Event & { currentTarget: HTMLInputElement }) {
 		const file = e.currentTarget.files?.[0];
@@ -312,44 +295,18 @@
 		</section>
 
 		<section>
-			<h2>Tone: vowel and spectral contour</h2>
+			<h2>Tone: spectral contour</h2>
 			<Contour {patch} {previewKey} register={contourRegister} />
 			<p class="hint">
-				Both raise and lower the tone, harmonics and breath noise, at fixed frequencies. The vowel
-				is a vocal tract's resonances, against a neutral vowel's: a bass's on E2, a tenor's on A#3
-				and a soprano's on E5, and in between on the keys between. The contour (blue) is the rest of
-				the timbre; purple is both together on the preview key. There is one for E2, A#3 and E5, and
-				the keys in between mix their neighbours: draw on any; the dashed line is the preview key's.
-				Match measures the sustain of an instrument and of this patch at mf, on every third key from
-				E2 to G5, and sets the contour that brings this patch's harmonics nearest the instrument's,
-				with the vowel as it is. Pick the vowel that the instrument sings before matching; then
-				another vowel keeps the rest of its timbre.
+				The contour (blue) raises and lowers the tone, harmonics and breath noise, at fixed
+				frequencies: it is the timbre that isn't the vowel, and every vowel shares it. Purple is the
+				contour with the selected vowel (see Vowels) on the preview key. There is one for E2, A#3
+				and E5, and the keys in between mix their neighbours: draw on any; the dashed line is the
+				preview key's. Match measures the sustain of an instrument and of this patch at mf, on every
+				third key from E2 to G5, and sets the contour that brings this patch's harmonics nearest the
+				instrument's, singing the selected vowel. Select the vowel that the instrument sings before
+				matching; then the other vowels keep the rest of its timbre.
 			</p>
-			<div class="buttons">
-				Vowel
-				{#each [...VOWELS, 'sung' as const] as v (v)}
-					<button class:on={patch.vowel.vowel === v} onclick={() => (patch.vowel.vowel = v)}
-						>{VOWEL_NAMES[v]}</button
-					>
-				{/each}
-			</div>
-			<Slider
-				label="Vowel"
-				bind:value={patch.vowel.amount}
-				min={0}
-				max={1}
-				step={0.05}
-				title="How much of the vowel: 1 is a vocal tract's resonances, 0 none"
-			/>
-			<Slider
-				label="Formant width"
-				bind:value={patch.vowel.width}
-				min={0.5}
-				max={4}
-				step={0.1}
-				unit="×"
-			/>
-
 			<div class="buttons">
 				Draw
 				{#each CONTOUR_KEYS as key, g (key)}
@@ -377,88 +334,8 @@
 		</section>
 
 		<section>
-			<h2>Tone: sing a vowel</h2>
-			<SingVowel {patch} {synth} />
-		</section>
-
-		<section>
-			<h2>Vowels of the lyrics</h2>
-			<p class="hint">
-				The choir app can sing each syllable of the lyrics on its own vowel. Give each vowel in the
-				list a sound with Keep.
-			</p>
-			<details class="hint">
-				<summary>How this works</summary>
-				<p>
-					"moon" is sung on oo, "see" on ee, "night" on ah moving to ih. For that, the exported
-					instrument needs a sound for each vowel in the list below.
-				</p>
-				<p>To give a vowel its sound:</p>
-				<ol>
-					<li>
-						Set up the sound in the sections above: press one of the Vowel buttons (ah, eh, ee, oh,
-						oo), or sing a vowel in "Tone: sing a vowel".
-					</li>
-					<li>
-						Press Keep in that vowel's row. For example: sing the "oo" of "book", then press Keep in
-						the uu row.
-					</li>
-				</ol>
-				<p>
-					Edit loads a row's sound back into the sections above, so that you can play it on the
-					keyboard, change it, and Keep it again. Forget removes the sound that you kept.
-				</p>
-				<p>
-					The third column says which sound each vowel gets. In bold: a sound that you kept for this
-					vowel, either "sung" or the Vowel button that you kept ("button ee"). Otherwise the vowel
-					borrows the nearest sound that there is: a Vowel button ("button oh" for aw, as in "law"),
-					or a sound that you kept for a nearby vowel ("ee: sung" for ih, as in "sit", once you have
-					kept a sung ee).
-				</p>
-				<p>
-					Export SF3 writes a sound for every vowel in the list once you have kept at least one.
-					Until then it writes only the one sound set up above, which the choir app then sings on
-					every syllable.
-				</p>
-			</details>
-			<label class="choice"
-				><input type="checkbox" bind:checked={singVowels} /> Play the pieces with each syllable on its
-				vowel, as the exported file would. While this is on, the keyboard plays the sound set up above,
-				and every change takes longer to build, because each vowel is built.</label
-			>
-			<p>
-				Set up above, and played by the keyboard: <b
-					>{patch.vowel.vowel === 'sung' ? 'sung' : `button ${VOWEL_NAMES[patch.vowel.vowel]}`}</b
-				>. Keep stores it in a row.
-			</p>
-			<table class="vowels">
-				<tbody>
-					{#each LYRIC_VOWELS as v (v.ipa)}
-						{@const { from, formants } = vowelFormants(patch, v.ipa)}
-						{@const kept = patch.vowels[v.ipa]}
-						<tr>
-							<td>{v.name}</td>
-							<td class="dim">/{v.ipa}/ {v.word}</td>
-							<td class:dim={!kept} class:kept>
-								{#if formants.vowel !== 'sung'}button {VOWEL_NAMES[formants.vowel]}
-								{:else if from === v.ipa}sung
-								{:else}{LYRIC_VOWELS.find((x) => x.ipa === from)!.name}: sung{/if}
-							</td>
-							<td>
-								<button onclick={() => (patch.vowels[v.ipa as Ipa] = editedFormants())}>Keep</button
-								>
-								<button
-									onclick={() => (patch.vowel = { ...patch.vowel, ...structuredClone(formants) })}
-									>Edit</button
-								>
-								<button disabled={!kept} onclick={() => delete patch.vowels[v.ipa as Ipa]}
-									>Forget</button
-								>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+			<h2>Vowels</h2>
+			<Vowels {patch} {synth} bind:singVowels />
 		</section>
 
 		<section>
@@ -764,25 +641,6 @@
 	}
 	.warn {
 		color: #e8657a;
-	}
-	details p,
-	details ol {
-		margin: 4px 0;
-	}
-	details ol {
-		padding-left: 18px;
-	}
-	summary {
-		cursor: pointer;
-	}
-	.vowels td {
-		padding: 1px 6px 1px 0;
-	}
-	.vowels .dim {
-		color: var(--dim);
-	}
-	.vowels .kept {
-		font-weight: bold;
 	}
 	footer {
 		position: fixed;

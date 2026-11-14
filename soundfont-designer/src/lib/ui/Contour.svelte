@@ -2,7 +2,7 @@
 	import { keyFreq } from '../dsp.ts';
 	import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from '../patch.ts';
 	import { contourCurve, NYQUIST } from '../spectrum.ts';
-	import { vowelCurve } from '../vowel.ts';
+	import { selectedFormants, vowelCurve } from '../vowel.ts';
 	import { logX, prepare, xLog } from './canvas.ts';
 
 	let {
@@ -65,7 +65,7 @@
 			ctx.lineWidth = 1;
 		};
 		// The preview key's vowel and contour together, with its highest point at 0 dB.
-		const vowel = vowelCurve(patch.vowel, previewKey),
+		const vowel = vowelCurve(selectedFormants(patch), patch.vowel, previewKey),
 			contour = contourCurve(patch.contour, previewKey),
 			both = (f: number) => vowel(f) + contour(f),
 			top = Math.max(

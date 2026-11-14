@@ -135,7 +135,11 @@ function formants(v: Vowel | 'neutral', key: number, width: number): Formants {
  * one's of the same voice, times the amount. The sung vowel has the formants of a, F1 to F3 moved
  * by the ratios of the user's vowel to their a, so that each register keeps its voice.
  */
-export function vowelCurve({ vowel, amount, width, sung }: Patch['vowel'], key: number) {
+export function vowelCurve(
+	{ vowel, sung }: VowelFormants,
+	{ amount, width }: Patch['vowel'],
+	key: number
+) {
 	if (amount === 0) return () => 0;
 	const fv = formants(vowel === 'sung' ? 'a' : vowel, key, width),
 		fn = formants('neutral', key, width);
@@ -143,8 +147,23 @@ export function vowelCurve({ vowel, amount, width, sung }: Patch['vowel'], key: 
 	return (f: number) => amount * 20 * Math.log10(cascade(fv, f) / cascade(fn, f));
 }
 
+/** What the samples of a vowel's formants depend on: not what a vowel of the table keeps. */
+export const formantsKey = ({ vowel, sung }: VowelFormants) =>
+	JSON.stringify(vowel === 'sung' ? sung : vowel);
+
+/** The vowel of the table that a sung vowel's ratios come nearest, as a tenor's, by F1 and F2. */
+export function nearestInTable(sung: number[]): Vowel {
+	const { a } = REGISTERS[1],
+		distance = (v: Vowel) =>
+			[0, 1].reduce(
+				(s, i) => s + Math.log((a.freq[i] * sung[i]) / REGISTERS[1][v].freq[i]) ** 2,
+				0
+			);
+	return VOWELS.reduce((best, v) => (distance(v) < distance(best) ? v : best));
+}
+
 /** The vowels of Csound's formant table (see vowel.ts), as the choir app's. */
-const TABLE_VOWELS: Partial<Record<Ipa, Vowel>> = { a: 'a', e: 'e', i: 'i', o: 'o', u: 'u' };
+export const TABLE_VOWELS: Partial<Record<Ipa, Vowel>> = { a: 'a', e: 'e', i: 'i', o: 'o', u: 'u' };
 
 /**
  * The formants that the patch sings `ipa` with, and the vowel that they are: the first of the
@@ -158,18 +177,23 @@ export function vowelFormants(p: Patch, ipa: Ipa): { from: Ipa; formants: VowelF
 	};
 }
 
+/** The formants of the selected vowel. */
+export const selectedFormants = (p: Patch) => vowelFormants(p, p.selected).formants;
+
+/** The "ah" that sung vowels are measured against, F1 to F3 in Hz, if it was sung. */
+export const sungAh = (p: Patch): number[] | undefined => p.vowels.a?.measured[0];
+
 /** A preset of the patch: its bank, its vowel's name, and the formants and their vowel's name. */
 type VowelPreset = { bank: number; name: string; formants: VowelFormants; from: string };
 
 /**
- * The presets of a patch: without vowels (or with `set` false), one at bank 0 with the patch's
+ * The presets of a patch: with `oneVowel` (or with `set` false), one at bank 0 with the selected
  * vowel; else one for each of the choir app's vowels, in its bank, and with `editing`, one with
- * the patch's vowel at EDITING_BANK.
+ * the selected vowel at EDITING_BANK, for the keyboard.
  */
 export function vowelSet(p: Patch, { set = true, editing = false } = {}): VowelPreset[] {
-	const own = (({ vowel, sung, measured }) => ({ vowel, sung, measured }))(p.vowel);
-	if (!set || !Object.keys(p.vowels).length)
-		return [{ bank: 0, name: '', formants: own, from: '' }];
+	const own = selectedFormants(p);
+	if (!set || p.oneVowel) return [{ bank: 0, name: '', formants: own, from: '' }];
 	const presets: VowelPreset[] = LYRIC_VOWELS.map(({ ipa, name }, bank) => {
 		const { from, formants } = vowelFormants(p, ipa);
 		return { bank, name, formants, from: LYRIC_VOWELS[VOWEL_BANK.get(from)!].name };

@@ -17,7 +17,7 @@ import {
 } from 'spessasynth_core';
 import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
 import { type Patch, type VowelFormants } from './patch.ts';
-import { vowelSet } from './vowel.ts';
+import { formantsKey, vowelSet } from './vowel.ts';
 import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
 
 /** The lowest and highest key that get a sample; the outer zones reach the ends of the keyboard. */
@@ -57,7 +57,7 @@ export function zones(spacing: number): Zone[] {
  * noise. A partial without copies is in both, a quarter period apart: then the sides add up in
  * power, like unrelated signals, at any pan and in mono.
  */
-export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
+export function toneSample(p: Patch, key: number, side: 0 | 1 = 0, formants?: VowelFormants) {
 	const sr = p.output.sampleRate,
 		n = 2 ** Math.round(Math.log2(p.output.loop * sr)),
 		bin = sr / n;
@@ -73,7 +73,7 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 		im[k] += amp * Math.sin(phase);
 	};
 	const { voices, detune, fundamentalDetune, noise, noiseLow, noiseHigh } = p.tone;
-	const harmonics = toneHarmonics(p, key, f, sr),
+	const harmonics = toneHarmonics(p, key, f, sr, formants),
 		lp = lowpass(p, f);
 	// The ensemble: each harmonic is split into `voices` partials, each detuned at random within
 	// ±detune/2. The upper harmonics beat at unrelated rates, which shimmers but keeps the loudness
@@ -111,7 +111,7 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0) {
 	}
 	if (noise > -90) {
 		// A power of 10^(noise/10) against the harmonics' 1, as they come out of the filter.
-		const shape = toneEq(p, key),
+		const shape = toneEq(p, key, formants),
 			amps = noiseSpectrum(p, n).map((a, k) => (a ? a * 10 ** (shape(k * bin) / 20) : 0));
 		let power = 0;
 		for (let k = 1; k < amps.length; k++) if (amps[k]) power += (amps[k] * lp(k * bin)) ** 2;
@@ -318,28 +318,30 @@ export function buildBank(
 
 	/** The tone's instrument, singing with `formants`. */
 	const toneInstrument = (formants: VowelFormants, name: string) => {
-		const v: Patch = { ...p, vowel: { ...p.vowel, ...formants } };
 		const tone = new BasicInstrument();
 		tone.name = `${p.name}: Tone${name ? ` ${name}` : ''}`;
 		// What the samples depend on: not the levels, which the zones' attenuation sets.
 		const toneKey = JSON.stringify([
-			{ ...v.tone, level: 0, width: 0 },
-			v.vowel,
-			v.eq,
-			v.contour,
-			v.filter,
+			{ ...p.tone, level: 0, width: 0 },
+			p.vowel,
+			formantsKey(formants),
+			p.eq,
+			p.contour,
+			p.filter,
 			sampleRate,
 			loop,
 			seed
 		]);
 		// In stereo, the sides are unrelated signals, which panning at constant power adds up to
 		// twice the power of one sample in the middle.
-		const { width } = v.tone,
+		const { width } = p.tone,
 			sides = width ? (['L', 'R'] as const) : (['M'] as const),
 			sideGain = toneGain / Math.sqrt(sides.length);
-		for (const { root, min, max } of zones(v.output.spacing)) {
+		for (const { root, min, max } of zones(p.output.spacing)) {
 			const stored = sides.map((side, i) => {
-				const t = cached(`tone ${root} ${i} ${toneKey}`, () => toneSample(v, root, i as 0 | 1));
+				const t = cached(`tone ${root} ${i} ${toneKey}`, () =>
+					toneSample(p, root, i as 0 | 1, formants)
+				);
 				const ts = store(
 					`tone ${root}${width ? side : ''}${name ? ` ${name}` : ''}`,
 					t.data.slice(),
@@ -352,10 +354,10 @@ export function buildBank(
 				tz.keyRange = { min, max };
 				tz.setGenerator(G.initialAttenuation, ts.attenuation);
 				if (width) tz.setGenerator(G.pan, Math.round((i ? 5 : -5) * width));
-				if (v.filter.harmonic < 64)
+				if (p.filter.harmonic < 64)
 					tz.setGenerator(
 						G.initialFilterFc,
-						Math.min(13500, absCents(keyFreq(root) * v.filter.harmonic))
+						Math.min(13500, absCents(keyFreq(root) * p.filter.harmonic))
 					);
 				return ts.sample;
 			});
@@ -423,7 +425,7 @@ export function buildBank(
 
 	const tones = new Map<string, BasicInstrument>();
 	for (const { bank: bankNumber, name, formants, from } of vowelSet(p, options)) {
-		const key = JSON.stringify(formants);
+		const key = formantsKey(formants);
 		if (!tones.has(key)) tones.set(key, toneInstrument(formants, from));
 		const preset = new BasicPreset(bank);
 		preset.name = name ? `${p.name} ${name}` : p.name;

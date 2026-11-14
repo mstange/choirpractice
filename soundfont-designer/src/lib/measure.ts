@@ -15,10 +15,13 @@ const FROM = 1.5,
 export const db = (p: number) => 10 * Math.log10(p + 1e-30);
 const median = (a: number[]) => a.sort((x, y) => x - y)[a.length >> 1];
 
-/** A patch's bank as the page plays it, written as SF2 and read back, with its preset at 0. */
+/**
+ * A patch's bank as the page plays it, written as SF2 and read back, with one preset at 0, of the
+ * selected vowel.
+ */
 export function patchBank(patch: Patch) {
 	return SoundBankLoader.fromArrayBuffer(
-		buildBank(patch, 0).bank.writeSF2({ writeDefaultModulators: true })
+		buildBank(patch, 0, { set: false }).bank.writeSF2({ writeDefaultModulators: true })
 	);
 }
 

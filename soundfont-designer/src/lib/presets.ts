@@ -48,7 +48,7 @@ export const MS_BASIC_AAHS = complete({
 
 /** MS Basic Aahs singing another vowel: the same contour, which is what isn't the vowel. */
 const singing = (vowel: Vowel, name: string) =>
-	complete({ ...MS_BASIC_AAHS, name, vowel: { ...MS_BASIC_AAHS.vowel, vowel } });
+	complete({ ...MS_BASIC_AAHS, name, selected: vowel });
 
 export const STARTING_POINTS: Patch[] = [
 	MS_BASIC_AAHS,
@@ -58,7 +58,8 @@ export const STARTING_POINTS: Patch[] = [
 	complete({
 		...MS_BASIC_AAHS,
 		name: 'Choir Uuus',
-		vowel: { ...MS_BASIC_AAHS.vowel, vowel: 'sung', sung: [0.54, 0.32, 0.77] }
+		vowels: { u: { vowel: 'sung', sung: [0.54, 0.32, 0.77], measured: [] } },
+		selected: 'u'
 	}),
 	d,
 	complete({
@@ -72,7 +73,8 @@ export const STARTING_POINTS: Patch[] = [
 	complete({
 		name: 'Piano + Pad',
 		tone: { ...d.tone, level: -3, tilt: -12, voices: 2, detune: 8 },
-		vowel: { ...d.vowel, vowel: 'o', amount: 0.2, width: 3 },
+		vowel: { amount: 0.2, width: 3 },
+		selected: 'o',
 		env: { ...d.env, attack: 160, decay: 600, sustain: 0 },
 		onset: { time: 90, bright: 0, scoop: 0 },
 		vibrato: { ...d.vibrato, depth: 0 },

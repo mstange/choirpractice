@@ -66,7 +66,7 @@ function render(
 ) {
 	const synth = new SpessaSynthProcessor(RATE, { effectsEnabled: false });
 	synth.soundBankManager.addSoundBank(bank, 'b');
-	// The vowel being edited, if the bank has more than one.
+	// The selected vowel, if the bank has more than one.
 	synth.midiChannels[0].patch.bankMSB = EDITING_BANK;
 	synth.programChange(0, program);
 	synth.controllerChange(0, 2, from);

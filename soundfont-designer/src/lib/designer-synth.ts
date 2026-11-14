@@ -85,7 +85,7 @@ export class DesignerSynth extends Synth {
 			const e = this.events.find((e) => e.data[0] === (0xb0 | first) && e.data[1] === cc);
 			if (e) this.send([0xb0, cc, e.data[2]], KEYBOARD);
 		}
-		// The keyboard plays the vowel being edited, if the designed bank has more than one.
+		// The keyboard plays the selected vowel, if the designed bank has more than one.
 		this.send([0xb0, 0, EDITING_BANK], KEYBOARD);
 		await this.setProgram(KEYBOARD, this.#program, KEYBOARD_NOTES);
 	}

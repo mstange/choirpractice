@@ -1,13 +1,19 @@
 // The parameters of a designed instrument, from which build.ts makes a sound bank.
 import type { Ipa } from '../../../site/src/lib/vowels.ts';
+import { nearestInTable } from './vowel.ts';
 
 export type EqType = 'lowshelf' | 'peak' | 'highshelf';
 export type EqBand = { type: EqType; freq: number; gain: number; q: number };
 export type Vowel = 'a' | 'e' | 'i' | 'o' | 'u';
-/** The bank of the preset of the vowel being edited, beside a vowel set, for the keyboard. */
+/** The bank of the preset of the selected vowel, beside a vowel set, for the keyboard. */
 export const EDITING_BANK = 100;
-/** A vowel's formants, as `Patch['vowel']` has them: the table's, or the sung ones. */
-export type VowelFormants = Pick<Patch['vowel'], 'vowel' | 'sung' | 'measured'>;
+/**
+ * A vowel's formants: those of `vowel` in Csound's table, or with `vowel` 'sung', those of a with
+ * F1 to F3 times `sung`, the ratios of a vowel that the user sang to their "ah" (see vowel.ts).
+ * `measured` has the formants in Hz that those came from, of the "ah" and of the vowel, if known.
+ * A vowel of the table keeps what was sung, so that it can go back to it.
+ */
+export type VowelFormants = { vowel: Vowel | 'sung'; sung: number[]; measured: number[][] };
 
 /**
  * An instrument of two layers that sound together on every note: a sustained tone, a looped
@@ -57,24 +63,23 @@ export interface Patch {
 		aperiodicTilt: number;
 	};
 	/**
-	 * The vowel, on the tone: its vocal tract's resonances against a neutral vowel's, in dB times
-	 * `amount`, with the formant bandwidths times `width` (see vowel.ts). The sung vowel is a's
-	 * formants F1 to F3 times `sung`: those of a vowel that the user sang, against their a's.
-	 * `measured` has the formants in Hz that those came from, of the a and of the vowel, if known.
+	 * How much of its vowel the tone has: the vowel's vocal tract's resonances against a neutral
+	 * vowel's, in dB times `amount`, with the formant bandwidths times `width` (see vowel.ts).
 	 */
-	vowel: {
-		vowel: Vowel | 'sung';
-		amount: number;
-		width: number;
-		sung: number[];
-		measured: number[][];
-	};
+	vowel: { amount: number; width: number };
 	/**
-	 * The vowels that the instrument sings in the choir app's pieces, by IPA symbol (see the choir
-	 * app's vowels.ts), each with formants of its own, at the amount and width of `vowel`. With any,
-	 * it can have a preset for each of the choir app's vowels, in its bank (see vowelSet()).
+	 * The formants of the choir app's vowels (its vowels.ts), by IPA symbol. A vowel without its
+	 * own sings the nearest that has them or is in Csound's table (see vowelFormants()). A sung a
+	 * is the "ah" that the other sung vowels are measured against.
 	 */
 	vowels: Partial<Record<Ipa, VowelFormants>>;
+	/**
+	 * The vowel being edited, which the keyboard and the plots play. With `oneVowel`, the
+	 * instrument sings it on every syllable, in one preset; else it has a preset for each of the
+	 * choir app's vowels, in its bank (see vowelSet()).
+	 */
+	selected: Ipa;
+	oneVowel: boolean;
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
@@ -161,8 +166,10 @@ export const DEFAULT_PATCH: Patch = {
 		aperiodicSlope: 0,
 		aperiodicTilt: 0
 	},
-	vowel: { vowel: 'a', amount: 0.2, width: 1, sung: [1, 1, 1], measured: [] },
+	vowel: { amount: 0.2, width: 1 },
 	vowels: {},
+	selected: 'a',
+	oneVowel: true,
 	eq: [
 		{ type: 'lowshelf', freq: 150, gain: 0, q: 0.7 },
 		{ type: 'peak', freq: 800, gain: 0, q: 1 },
@@ -210,15 +217,31 @@ export function complete(p: Partial<Patch>): Patch {
 	// Patches saved earlier had their formants as EQ peaks of a tenor's, which a third of the
 	// amount at half the width comes near.
 	if ('formant' in p) {
-		const { vowel, amount, width } = (p as { formant: Patch['vowel'] }).formant;
-		d.vowel = {
-			vowel,
-			amount: Math.round((amount / 3) * 20) / 20,
-			width: width / 2,
-			sung: [1, 1, 1],
-			measured: []
-		};
+		const { vowel, amount, width } = (p as { formant: { vowel: Vowel } & Patch['vowel'] }).formant;
+		d.vowel = { vowel, amount: Math.round((amount / 3) * 20) / 20, width: width / 2 };
 		delete d.formant;
+	}
+	// Patches saved earlier had the vowel being edited in `vowel`, which a vowel's formants were
+	// kept from, and one preset of it if none was kept. It becomes the vowel that has the same
+	// formants, or else the one of the table, or nearest the table's, which then keeps it. The
+	// "ah" that the sung vowels were measured against is the sung a.
+	const old = d.vowel as Patch['vowel'] & Partial<VowelFormants>,
+		vowels = d.vowels as Patch['vowels'];
+	if (old.vowel) {
+		const edited = { vowel: old.vowel, sung: old.sung ?? [1, 1, 1], measured: old.measured ?? [] },
+			same = Object.entries(vowels).find(([, f]) => JSON.stringify(f) === JSON.stringify(edited));
+		d.oneVowel = !Object.keys(vowels).length;
+		if (same) d.selected = same[0];
+		else if (edited.vowel !== 'sung') d.selected = edited.vowel;
+		else {
+			const ipa = nearestInTable(edited.sung);
+			d.selected = ipa;
+			vowels[ipa] ??= edited;
+		}
+		const ah = Object.values(vowels).find((f) => f.vowel === 'sung' && f.measured.length);
+		if (ah && !vowels.a)
+			vowels.a = { vowel: 'sung', sung: [1, 1, 1], measured: [ah.measured[0], ah.measured[0]] };
+		d.vowel = { amount: old.amount, width: old.width };
 	}
 	return d as unknown as Patch;
 }

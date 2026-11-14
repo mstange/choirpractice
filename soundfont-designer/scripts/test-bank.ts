@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
-import { DEFAULT_PATCH, EDITING_BANK, MATCH_KEYS, complete } from '../src/lib/patch.ts';
+import { DEFAULT_PATCH, EDITING_BANK, MATCH_KEYS, complete, type Patch } from '../src/lib/patch.ts';
 import { Engine } from '../../site/src/lib/synth-engine.ts';
 import { VOWELS } from '../../site/src/lib/vowels.ts';
 import { compress } from '../src/lib/vorbis.ts';
@@ -284,6 +284,7 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 	const p = complete({
 		...DEFAULT_PATCH,
 		name: 'Set',
+		oneVowel: false,
 		vowels: {
 			u: { vowel: 'sung', sung: [0.54, 0.32, 0.77], measured: [] },
 			i: { vowel: 'i', sung: [1, 1, 1], measured: [] }
@@ -301,7 +302,7 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 		banks.join() === [...VOWELS.keys(), EDITING_BANK].join(),
 		`a preset per vowel, and the one edited (banks ${banks.join(' ')})`
 	);
-	// a, e and o from the table (the edited vowel is the table's a), i and u as designed.
+	// a, e and o from the table (the selected vowel is the table's a), i and u as designed.
 	const tones = new Set(set.instruments.filter((x) => x.name.includes('Tone')).map((x) => x.name));
 	check(tones.size === 5, `vowels of the same formants share an instrument (${tones.size} tones)`);
 
@@ -349,6 +350,34 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 	check(
 		tone('ih') === tone('ee') && tone('eh') === tone('ay') && tone('uu') === tone('oo'),
 		`a vowel not designed sings the nearest one (ih: ${tone('ih')}, eh: ${tone('eh')}, uu: ${tone('uu')})`
+	);
+}
+
+// Patches saved before the vowels had rows of their own: the vowel being edited becomes the
+// selected one, a sung vowel not kept the row of the table's vowel nearest it, and the "ah" that
+// the sung vowels were measured against the sung a.
+{
+	const old = (vowel: object, vowels = {}) =>
+		complete({ ...DEFAULT_PATCH, vowel, vowels } as unknown as Partial<Patch>);
+	const ah = [700, 1150, 2600],
+		oo = { vowel: 'sung', sung: [0.5, 0.5, 0.9], measured: [ah, [350, 575, 2340]] } as const;
+	const oh = old({ vowel: 'o', amount: 1, width: 1.5, sung: [1, 1, 1], measured: [] }),
+		uuus = old({ vowel: 'sung', amount: 1, width: 1.5, sung: [0.54, 0.32, 0.77], measured: [] }),
+		kept = old({ ...oo, amount: 1, width: 1.5 }, { ʊ: oo });
+	check(
+		oh.selected === 'o' &&
+			oh.oneVowel &&
+			!Object.keys(oh.vowels).length &&
+			JSON.stringify(oh.vowel) === '{"amount":1,"width":1.5}',
+		`an old patch singing oh sings oh (${JSON.stringify([oh.selected, oh.oneVowel, oh.vowel])})`
+	);
+	check(
+		uuus.selected === 'u' && uuus.oneVowel && uuus.vowels.u?.sung.join() === '0.54,0.32,0.77',
+		`an old patch singing a sung oo keeps it as oo (${uuus.selected})`
+	);
+	check(
+		kept.selected === 'ʊ' && !kept.oneVowel && kept.vowels.a?.measured[0].join() === ah.join(),
+		`an old patch with kept vowels keeps them and their "ah" (${kept.selected}, ${Object.keys(kept.vowels)})`
 	);
 }
 

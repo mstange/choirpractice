@@ -1,7 +1,7 @@
 // The tone's spectrum, for build.ts and the plots.
 import { between, eqCurve } from './dsp.ts';
-import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from './patch.ts';
-import { vowelCurve } from './vowel.ts';
+import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch, type VowelFormants } from './patch.ts';
+import { selectedFormants, vowelCurve } from './vowel.ts';
 
 export const CONTOUR_OCTAVES = CONTOUR_FREQS.map(Math.log2);
 
@@ -20,11 +20,11 @@ export function contourCurve(contour: number[][], key: number) {
 
 /**
  * The gain in dB of the EQ, the vowel and the contour at `key`: what shapes the tone by
- * frequency.
+ * frequency, singing `formants`, by default the selected vowel's.
  */
-export function toneEq(p: Patch, key: number) {
+export function toneEq(p: Patch, key: number, formants: VowelFormants = selectedFormants(p)) {
 	const eq = eqCurve(p.eq),
-		vowel = vowelCurve(p.vowel, key),
+		vowel = vowelCurve(formants, p.vowel, key),
 		contour = contourCurve(p.contour, key);
 	return (f: number) => eq(f) + vowel(f) + contour(f);
 }
@@ -41,10 +41,16 @@ export const NYQUIST = 0.45;
  * contour and the low-pass filter (which the synthesizer applies), so that these change the timbre and the level
  * the loudness.
  */
-export function toneHarmonics(p: Patch, key: number, f0: number, sampleRate: number) {
+export function toneHarmonics(
+	p: Patch,
+	key: number,
+	f0: number,
+	sampleRate: number,
+	formants?: VowelFormants
+) {
 	const { tilt, even, harmonics, maxHarmonic } = p.tone;
 	const count = Math.min(maxHarmonic, Math.floor((NYQUIST * sampleRate) / f0));
-	const eq = toneEq(p, key),
+	const eq = toneEq(p, key, formants),
 		lp = lowpass(p, f0);
 	const list = Array.from({ length: count }, (_, i) => {
 		const freq = (i + 1) * f0;

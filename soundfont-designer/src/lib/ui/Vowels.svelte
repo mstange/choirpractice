@@ -5,7 +5,8 @@
 	import { BANDS, bandFreq, LOWEST, NEED, STRETCH } from '../sung.ts';
 	import type { Assessment, SungReply, SungRequest } from '../sung-worker.ts';
 	import { detectPitch } from '../../../../site/src/lib/pitch.ts';
-	import { sungAh, TABLE_VOWELS, VOWELS, vowelFormants } from '../vowel.ts';
+	import { ownVoices, TABLE_VOWELS, VOWELS, vowelFormants } from '../vowel.ts';
+	import { VOICE_TYPES } from '../../../../site/src/lib/voice-types.ts';
 	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../../../site/src/lib/vowels.ts';
 	import { prepare } from './canvas.ts';
 	import Slider from './Slider.svelte';
@@ -51,11 +52,17 @@
 	/** Ends the recording early. */
 	let done: (() => void) | null = null;
 
-	const ah = $derived(sungAh(patch));
+	/** The vowels being edited: the voice type's own, or those of all voice types. */
+	const table = $derived(patch.voice ? (patch.voices[patch.voice] ?? {}) : patch.vowels);
+	/** The same, to change, made for the voice type if it has none yet. */
+	const editable = () => (patch.voice ? (patch.voices[patch.voice] ??= {}) : patch.vowels);
+
+	/** The "ah" that the vowels being edited are sung against, if it was sung. */
+	const ah = $derived(table.a?.measured[0]);
 	/** The sung vowels that were measured against another "ah" than the sung a's. */
 	const stale = $derived(
 		ah
-			? (Object.entries(patch.vowels) as [Ipa, VowelFormants][]).filter(
+			? (Object.entries(table) as [Ipa, VowelFormants][]).filter(
 					([ipa, f]) => ipa !== 'a' && f.measured.length && f.measured[0].join() !== ah.join()
 				)
 			: []
@@ -130,7 +137,7 @@
 		}
 		last = { ipa, fit };
 		const reference = ipa === 'a' ? fit.formants : ah!;
-		patch.vowels[ipa] = {
+		editable()[ipa] = {
 			vowel: 'sung',
 			sung: ratios(fit.formants, reference),
 			measured: [reference, fit.formants]
@@ -139,28 +146,33 @@
 
 	function remeasure() {
 		for (const [ipa, f] of stale)
-			patch.vowels[ipa] = {
+			editable()[ipa] = {
 				...f,
 				sung: ratios(f.measured[1], ah!),
 				measured: [ah!, f.measured[1]]
 			};
 	}
 
-	/** What a vowel's sound is: '' for borrowed, a vowel of the table, 'sung' or 'fitted'. */
-	const source = (ipa: Ipa) => patch.vowels[ipa]?.vowel ?? TABLE_VOWELS[ipa] ?? '';
+	/**
+	 * What a vowel's sound is: '' for borrowed (or, for a voice type, as all voice types have it), a
+	 * vowel of the table, 'sung' or 'fitted'.
+	 */
+	const source = (ipa: Ipa) => table[ipa]?.vowel ?? (patch.voice ? '' : (TABLE_VOWELS[ipa] ?? ''));
 	const hasSung = (f: VowelFormants | undefined) =>
 		!!f && (f.vowel === 'sung' || f.measured.length > 0 || f.sung.some((x) => x !== 1));
 	/** The vowel that `ipa` sings like while it has no sound of its own. */
 	const borrowed = (ipa: Ipa) =>
-		vowelFormants({ ...patch, vowels: { ...patch.vowels, [ipa]: undefined } }, ipa).from;
+		vowelFormants({ ...patch, vowels: { ...patch.vowels, [ipa]: undefined } }, ipa, null).from;
 
 	function setSource(ipa: Ipa, value: string) {
 		patch.selected = ipa;
-		const own = patch.vowels[ipa];
-		if (value === '') delete patch.vowels[ipa];
+		const vowels = editable(),
+			own = vowels[ipa];
+		if (value === '') delete vowels[ipa];
 		else if (hasSung(own) || own?.registers) own!.vowel = value as Vowel | 'sung' | 'fitted';
-		else if (value === TABLE_VOWELS[ipa]) delete patch.vowels[ipa];
-		else patch.vowels[ipa] = { vowel: value as Vowel, sung: [1, 1, 1], measured: [] };
+		else if (value === TABLE_VOWELS[ipa] && !patch.voice) delete vowels[ipa];
+		else vowels[ipa] = { vowel: value as Vowel, sung: [1, 1, 1], measured: [] };
+		if (patch.voice && !Object.keys(vowels).length) delete patch.voices[patch.voice];
 	}
 
 	const hz = (m: number) => 440 * 2 ** ((m - 69) / 12);
@@ -338,10 +350,26 @@
 	</p>
 {/if}
 
+<p class="voice-types">
+	<label
+		>Vowels of <select bind:value={patch.voice}>
+			<option value={null}>all voices</option>
+			{#each VOICE_TYPES as { name } (name)}<option value={name}
+					>{name === 'bass' ? 'basses' : `${name}s`}{ownVoices(patch).includes(name)
+						? ' (their own)'
+						: ''}</option
+				>{/each}
+		</select></label
+	>
+	<span class="dim"
+		>The choir app gives each vocal part a voice type by its pitch. A voice type with vowels of its
+		own sings them, and the vowels of all voices where it has none of its own.</span
+	>
+</p>
 <table class="vowels">
 	<tbody>
 		{#each LYRIC_VOWELS as v (v.ipa)}
-			{@const own = patch.vowels[v.ipa]}
+			{@const own = table[v.ipa]}
 			<tr class:selected={patch.selected === v.ipa}>
 				<td>
 					<label
@@ -356,12 +384,14 @@
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
 						title={own?.vowel === 'fitted' && own.registers
-							? `Fitted: F1–F3 ${own.registers.map((r) => r.freq.slice(0, 3).join(', ')).join(' Hz on E2, ')} Hz on E5${own.contour ? ', with a contour of its own' : ''}`
+							? `Fitted: F1–F3 ${own.registers.map((r, g) => `${r.freq.slice(0, 3).join(', ')} Hz on ${['E2', 'A♯3', 'E5'][g]}`).join('; ')}${own.contour ? ', with a contour of its own' : ''}`
 							: own?.measured.length
 								? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
 								: undefined}
 					>
-						{#if !TABLE_VOWELS[v.ipa]}<option value="">same as {nameOf(borrowed(v.ipa))}</option
+						{#if patch.voice}<option value="">as all voices</option>
+						{:else if !TABLE_VOWELS[v.ipa]}<option value=""
+								>same as {nameOf(borrowed(v.ipa))}</option
 							>{/if}
 						{#each VOWELS as t (t)}<option value={t}>built-in {tableName(t)}</option>{/each}
 						{#if hasSung(own)}<option value="sung">your recording</option>{/if}

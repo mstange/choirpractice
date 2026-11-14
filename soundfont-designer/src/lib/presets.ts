@@ -1,5 +1,6 @@
 // Patches to start from, as changes to the default patch.
 import { DEFAULT_PATCH, complete, type Patch, type Vowel } from './patch.ts';
+import { RECORDED_CHOIR_VOICES } from './recorded-choir.ts';
 
 const d = DEFAULT_PATCH;
 
@@ -64,8 +65,8 @@ export const STARTING_POINTS: Patch[] = [
 	// MS Basic Aahs fitted to a recorded choir, the Choral Singing Dataset's Locus iste, with
 	// scripts/choir/ (see its README): the contour and the noise between the harmonics to the four
 	// sections' notes on "ah"; each other vowel's formants and bandwidths per register, and a contour
-	// of its own, to their notes on it (fit-vowels.ts); and the vibrato to that of the singers' mean
-	// pitch.
+	// of its own, to their notes on it (fit-vowels.ts); each voice type's vowels the same, to its
+	// section's notes (recorded-choir.ts); and the vibrato to that of the singers' mean pitch.
 	complete({
 		...MS_BASIC_AAHS,
 		name: 'Recorded Choir',
@@ -182,6 +183,7 @@ export const STARTING_POINTS: Patch[] = [
 				-16, -32, -27.5, -22, -27, -35, -32, -31, -29.5, -29
 			]
 		],
+		voices: RECORDED_CHOIR_VOICES,
 		vibrato: { ...MS_BASIC_AAHS.vibrato, rate: 6, depth: 12 }
 	}),
 	d,

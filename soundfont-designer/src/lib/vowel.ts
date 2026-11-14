@@ -14,6 +14,7 @@ import {
 	VOWELS as LYRIC_VOWELS,
 	type Ipa
 } from '../../../site/src/lib/vowels.ts';
+import { VOICE_TYPES, voiceBank, type VoiceType } from '../../../site/src/lib/voice-types.ts';
 
 /** Csound's formant table: per voice, per vowel, frequencies and bandwidths. */
 const TABLE: Record<string, Record<Vowel, [number[], number[]]>> = {
@@ -207,19 +208,30 @@ export function nearestInTable(sung: number[]): Vowel {
 export const TABLE_VOWELS: Partial<Record<Ipa, Vowel>> = { a: 'a', e: 'e', i: 'i', o: 'o', u: 'u' };
 
 /**
- * The formants that the patch sings `ipa` with, and the vowel that they are: the first of the
- * vowel and those nearest it that is designed or in Csound's table, the designed one if both.
+ * The formants that the patch sings `ipa` with, for `voice` (by default the one being edited, or
+ * null for all), and the vowel that they are: the first of the vowel and those nearest it that is
+ * designed for the voice type, designed for all or in Csound's table, in that order if several.
  */
-export function vowelFormants(p: Patch, ipa: Ipa): { from: Ipa; formants: VowelFormants } {
-	const from = nearest(ipa).find((v) => p.vowels[v] || TABLE_VOWELS[v])!;
+export function vowelFormants(
+	p: Patch,
+	ipa: Ipa,
+	voice: VoiceType | null = p.voice
+): { from: Ipa; formants: VowelFormants } {
+	const own = voice ? p.voices[voice] : undefined,
+		from = nearest(ipa).find((v) => own?.[v] || p.vowels[v] || TABLE_VOWELS[v])!;
 	return {
 		from,
-		formants: p.vowels[from] ?? { vowel: TABLE_VOWELS[from]!, sung: [1, 1, 1], measured: [] }
+		formants: own?.[from] ??
+			p.vowels[from] ?? { vowel: TABLE_VOWELS[from]!, sung: [1, 1, 1], measured: [] }
 	};
 }
 
-/** The formants of the selected vowel. */
+/** The formants of the selected vowel, for the voice type being edited. */
 export const selectedFormants = (p: Patch) => vowelFormants(p, p.selected).formants;
+
+/** The voice types that have vowels of their own, and so presets of their own. */
+export const ownVoices = (p: Patch) =>
+	VOICE_TYPES.map((v) => v.name).filter((v) => Object.keys(p.voices[v] ?? {}).length);
 
 /** The "ah" that sung vowels are measured against, F1 to F3 in Hz, if it was sung. */
 export const sungAh = (p: Patch): number[] | undefined => p.vowels.a?.measured[0];
@@ -228,17 +240,33 @@ export const sungAh = (p: Patch): number[] | undefined => p.vowels.a?.measured[0
 type VowelPreset = { bank: number; name: string; formants: VowelFormants; from: string };
 
 /**
- * The presets of a patch: with `oneVowel` (or with `set` false), one at bank 0 with the selected
- * vowel; else one for each of the choir app's vowels, in its bank, and with `editing`, one with
- * the selected vowel at EDITING_BANK, for the keyboard.
+ * The presets of a patch: with `set` false, one at bank 0 with the selected vowel of the voice
+ * type being edited. Else, for all voice types and for each that has vowels of its own: with
+ * `oneVowel`, one with the selected vowel, at bank 0 or the voice type's first bank; without,
+ * one for each of the choir app's vowels, in its bank (see voiceBank() in the choir app's
+ * voice-types.ts). With `editing`, also one with the selected vowel of the voice type being
+ * edited at EDITING_BANK, for the keyboard.
  */
 export function vowelSet(p: Patch, { set = true, editing = false } = {}): VowelPreset[] {
 	const own = selectedFormants(p);
-	if (!set || p.oneVowel) return [{ bank: 0, name: '', formants: own, from: '' }];
-	const presets: VowelPreset[] = LYRIC_VOWELS.map(({ ipa, name }, bank) => {
-		const { from, formants } = vowelFormants(p, ipa);
-		return { bank, name, formants, from: LYRIC_VOWELS[VOWEL_BANK.get(from)!].name };
-	});
+	if (!set || (p.oneVowel && !ownVoices(p).length))
+		return [{ bank: 0, name: '', formants: own, from: '' }];
+	const presets: VowelPreset[] = [];
+	for (const voice of [null, ...ownVoices(p)]) {
+		const vowels = p.oneVowel
+			? [{ ipa: p.selected, name: '', bank: 0 }]
+			: LYRIC_VOWELS.map(({ ipa, name }, bank) => ({ ipa, name, bank }));
+		for (const { ipa, name, bank } of vowels) {
+			const { from, formants } = vowelFormants(p, ipa, voice),
+				fromName = LYRIC_VOWELS[VOWEL_BANK.get(from)!].name;
+			presets.push({
+				bank: voice ? voiceBank(voice, bank) : bank,
+				name: [voice, name].filter(Boolean).join(' '),
+				formants,
+				from: [voice, fromName].filter(Boolean).join(' ')
+			});
+		}
+	}
 	if (editing)
 		presets.push({ bank: EDITING_BANK, name: 'editing', formants: own, from: 'editing' });
 	return presets;

@@ -4,7 +4,9 @@
 // Tests each fit on the notes that it wasn't fitted on, and the final one by rendering.
 //
 // Usage: node scripts/choir/fit-vowels.ts [preset or patch JSON, default Recorded Choir]
-//   [vowels, default ɛ i ɔ u] [--contour] [--write patch.json]
+//   [vowels, default ɛ i ɔ u] [--contour] [--section soprano|alto|tenor|bass] [--write patch.json]
+// With --section, fitted to that section's notes only, as that voice type's own vowels, from those
+// that it has or else those of all voices.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank } from 'spessasynth_core';
 import { fitContour, measure, patchBank, type Harmonic } from '../../src/lib/measure.ts';
@@ -24,12 +26,16 @@ const args = process.argv.slice(2),
 		return i >= 0 ? args.splice(i, 2)[1] : null;
 	};
 const withContour = flag('--contour'),
+	section = option('--section'),
 	writeTo = option('--write'),
 	[which = 'Recorded Choir', ...listed] = args,
 	vowels = listed.length ? listed : ['ɛ', 'i', 'ɔ', 'u'];
 const patch: Patch = which.endsWith('.json')
 	? complete(JSON.parse(readFileSync(which, 'utf8')))
 	: structuredClone(STARTING_POINTS.find((p) => p.name === which)!);
+// With a section, its vowels are the voice type's own, and the patch plays them.
+const voice = section as Patch['voice'];
+patch.voice = voice;
 
 const round = (r: Formants[]) =>
 	r.map(({ freq, bw }) => ({ freq: freq.map(Math.round), bw: bw.map(Math.round) }));
@@ -108,7 +114,7 @@ await BasicSoundBank.ready;
 for (const vowel of vowels) {
 	patch.selected = vowel as Patch['selected'];
 	const base = selectedFormants(patch),
-		list: KeyHarmonics[] = choirHarmonics(vowel),
+		list: KeyHarmonics[] = choirHarmonics(vowel).filter((e) => !section || e.section === section),
 		keys = list.map((e) => e.key),
 		all = list.map(harmonicsOf);
 	console.log(`\n${vowel}: ${list.length} section-keys`);
@@ -132,7 +138,8 @@ for (const vowel of vowels) {
 	const f = fit(all, keys, base),
 		before = patchBank(patch),
 		renderedBefore = keys.map((k) => measure(before, 0, k));
-	patch.vowels[vowel as Patch['selected']] = f;
+	if (voice) (patch.voices[voice] ??= {})[vowel as Patch['selected']] = f;
+	else patch.vowels[vowel as Patch['selected']] = f;
 	const after = patchBank(patch),
 		renderedAfter = keys.map((k) => measure(after, 0, k));
 	console.log(
@@ -151,4 +158,4 @@ for (const vowel of vowels) {
 			`    contour: ${f.contour.map((row) => row.map((v) => v.toFixed(0)).join(' ')).join(' | ')}`
 		);
 }
-if (writeTo) writeFileSync(writeTo, JSON.stringify(patch, null, 1));
+if (writeTo) writeFileSync(writeTo, JSON.stringify({ ...patch, voice: null }, null, 1));

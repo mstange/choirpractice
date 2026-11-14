@@ -20,7 +20,8 @@ export const VOWELS = [
 	{ ipa: 'ʌ', name: 'uh', word: 'cup', near: ['a', 'ɔ'] },
 	{ ipa: 'æ', name: 'ae', word: 'cat', near: ['ɛ', 'a'] },
 	{ ipa: 'y', name: 'ue', word: 'German über', near: ['i', 'u'] },
-	{ ipa: 'ø', name: 'oe', word: 'German schön', near: ['e', 'o'] }
+	{ ipa: 'ø', name: 'oe', word: 'German schön', near: ['e', 'o'] },
+	{ ipa: 'ɜ', name: 'er', word: 'bird', near: ['ʌ', 'ø'] }
 ] as const;
 
 export type Ipa = (typeof VOWELS)[number]['ipa'];

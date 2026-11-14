@@ -11,6 +11,8 @@ const appFiles = ['', ...immutable, ...assets].map(
 	(f) => new URL(typeof f === 'string' ? f : f.path, scope).href
 );
 const media = new URL(MEDIA_BASE + '/', scope).href;
+/** The page itself. Other pages in the scope, such as soundfont-designer/, are left alone. */
+const pages = [scope, new URL('index.html', scope).href];
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(caches.open(APP_CACHE).then((cache) => cache.addAll(appFiles)));
@@ -31,7 +33,8 @@ self.addEventListener('fetch', (event) => {
 	const { request } = event;
 	if (request.method !== 'GET') return;
 	if (request.url.startsWith(media)) event.respondWith(fromMedia(event));
-	else if (request.mode === 'navigate') event.respondWith(page(request));
+	else if (request.mode === 'navigate' && pages.includes(request.url.split(/[?#]/)[0]))
+		event.respondWith(page(request));
 	else if (appFiles.includes(request.url)) event.respondWith(fromApp(request));
 });
 

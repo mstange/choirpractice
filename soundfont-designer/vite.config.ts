@@ -30,6 +30,8 @@ function media(): Plugin {
 }
 
 export default defineConfig({
+	// So that it works wherever it is served, such as at choirpractice.app/soundfont-designer/.
+	base: './',
 	plugins: [media(), svelte()],
 	worker: { format: 'es' },
 	// The synthesizer is the choir app's, in ../site, and should use the same spessasynth as the rest.

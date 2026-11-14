@@ -18,7 +18,7 @@ npm run dev
 
 The choir app (`../site`) needs its own `npm install` too: the page plays with its synthesizer.
 
-The page plays the pieces that the choir app knows: the demo, and the seasons that the choir app opened before, which it keeps in `localStorage`. Deployed at `choirpractice.app/soundfont-designer/`, the page shares the choir app's `localStorage`, and fetches from the same media host (`VITE_MEDIA_BASE`). With `npm run dev`, it also offers all seasons in `../media` (or the directory that `MEDIA` names: `MEDIA=/path/to/media npm run dev`), which it serves at `media/`. It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
+The page plays the pieces that the choir app knows: the demo, and the seasons that the choir app opened before, which it keeps in `localStorage`. Deployed at `choirpractice.app/soundfont-designer/`, the page shares the choir app's `localStorage`, and fetches from the same media host (`VITE_MEDIA_BASE`). With `npm run dev`, it also offers all seasons in `../media` (or the directory that `MEDIA` names: `MEDIA=/path/to/media npm run dev`), which it serves at `media/`. `npm run build` in `../site` builds the page into `site/build/soundfont-designer/`, and `npm run preview` there serves it at `/soundfont-designer/`, next to the choir app. It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
 
 - `npm test` builds the default patch, writes it as SF2 and SF3, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
 - `node scripts/spectrum.ts [--match] [preset or patch JSON] [keys]` compares the sustain of MS Basic's Choir Aahs with a patch's, as spessasynth renders them: per harmonic its level, the noise beside it and its spread in cents, and how a strong harmonic moves over time. With `--match`, it first matches the patch's contour to Choir Aahs, and measures how near that brought it.
@@ -36,11 +36,11 @@ The page plays the pieces that the choir app knows: the demo, and the seasons th
 
 ## Putting an exported instrument into the choir app
 
-The choir app fetches `media/soundfont/<program>.sf3` for each General MIDI program.
+The choir app fetches `media/soundfont/<program>.sf3` for each General MIDI program. The programs in `OWN_PROGRAMS` of `site/src/lib/instruments.ts` are its own instruments, which `site/scripts/soundfont.ts` doesn't write from MS Basic: 54, Practice Synth, is one.
 
-1. Export with a program that MS Basic's files in `media/soundfont/` don't use, such as 54 (Synth Voice).
-2. Copy the file to `media/soundfont/54.sf3` in the choir app.
-3. Add `[54, 'Practice Voice']` to `INSTRUMENTS` in `site/src/lib/instruments.ts`. The choir app's `site/scripts/soundfont.ts` would try to write that program from MS Basic, so it needs to skip it.
+1. Export with program 54 to replace Practice Synth, or with another program that MS Basic's files in `media/soundfont/` don't use.
+2. Copy the file to `../media/soundfont/<program>.sf3`.
+3. For a new program, add it to `INSTRUMENTS` and `OWN_PROGRAMS` in `site/src/lib/instruments.ts`.
 
 ## How it works
 

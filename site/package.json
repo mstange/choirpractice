@@ -5,12 +5,12 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "vite build",
+		"build": "vite build && VITE_MEDIA_BASE=${VITE_MEDIA_BASE:-../media} npm --prefix ../soundfont-designer run build -- --outDir ../site/build/soundfont-designer --emptyOutDir",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p src/service-worker",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"deploy": "VITE_MEDIA_BASE=https://media.choirpractice.app vite build && wrangler deploy",
+		"deploy": "VITE_MEDIA_BASE=https://media.choirpractice.app npm run build && wrangler deploy",
 		"format": "prettier --write .",
 		"lint": "prettier --check ."
 	},

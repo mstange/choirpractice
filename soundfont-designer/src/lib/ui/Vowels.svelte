@@ -2,8 +2,8 @@
 	import type { DesignerSynth } from '../designer-synth.ts';
 	import type { Patch, Vowel, VowelFormants } from '../patch.ts';
 	import { Recorder, wav } from '../recorder.ts';
-	import { harmonics } from '../sung.ts';
-	import type { SungReply, SungRequest } from '../sung-worker.ts';
+	import { BANDS, bandFreq, LOWEST, NEED, STRETCH } from '../sung.ts';
+	import type { Assessment, SungReply, SungRequest } from '../sung-worker.ts';
 	import { detectPitch } from '../../../../site/src/lib/pitch.ts';
 	import { sungAh, TABLE_VOWELS, VOWELS, vowelFormants } from '../vowel.ts';
 	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../../../site/src/lib/vowels.ts';
@@ -17,26 +17,17 @@
 	}: { patch: Patch; synth: DesignerSynth | null; singVowels: boolean } = $props();
 
 	/**
-	 * The fit needs the harmonics to sample the spectrum densely: frequency bands of an eighth of an
-	 * octave from `LOWEST` Hz up to the highest harmonic measured, each with harmonics in it for
-	 * `NEED` seconds. A held note fills the bands wider than its pitch, above about 1 kHz; the
-	 * narrower bands below fill as the pitch moves, by a few semitones near F1. The bands below the
-	 * lowest pitch sung can't fill, and aren't needed. The recording stops once every band needed
-	 * is full, or after `LONGEST` seconds.
+	 * The recording stops once the frequency bands (`BANDS` in `sung.ts`) have been sung through
+	 * twice and the formants hold steady, at Done, or after `LONGEST` seconds.
 	 */
-	const LOWEST = 250,
-		BANDS = 30,
-		NEED = 0.2,
-		LONGEST = 30;
-	const bandOf = (f: number) => Math.floor(8 * Math.log2(f / LOWEST)),
-		bandFreq = (i: number) => LOWEST * 2 ** (i / 8);
+	const LONGEST = 60;
 	/**
 	 * The fewest frames with a clear pitch that a fit is made from, and the largest difference of
-	 * the formants between the fits of the lower and upper pitches that is trusted: Chimera's
-	 * vowels differ by up to 15%, and the user's "ah" fitted with a straight tilt by over 50%.
+	 * a formant between the first and the second time through the bands that counts as the same
+	 * vowel: Chimera's slides sung twice differ by up to 2%.
 	 */
 	const MIN_FRAMES = 100,
-		MAX_SPREAD = 0.2;
+		MAX_SPREAD = 0.1;
 
 	const nameOf = (ipa: Ipa) => LYRIC_VOWELS.find((v) => v.ipa === ipa)!.name;
 	/** The table's vowels by the name of the choir app's vowel that they are. */
@@ -46,18 +37,15 @@
 	let busy = $state<Ipa | null>(null),
 		phase = $state<'record' | 'fit'>('record'),
 		error = $state(''),
-		last = $state<{ ipa: Ipa; r: SungReply } | null>(null);
-	/** The time since the recording started, the pitch sung, and the seconds of harmonics per band. */
+		last = $state<{ ipa: Ipa; fit: Assessment } | null>(null);
+	/** The time since the recording started, the pitch sung, and the fit of what was sung so far. */
 	let now = $state(-1),
 		trace = $state.raw<[number, number][]>([]),
-		covered = $state.raw<number[]>(Array(BANDS).fill(0));
-	/** The first band needed: the lowest above the lowest pitch sung. */
-	const firstNeeded = $derived(
-		trace.length
-			? Math.max(0, Math.ceil(8 * Math.log2(Math.min(...trace.map(([, m]) => hz(m))) / LOWEST)))
-			: 0
-	);
-	const full = $derived(covered.filter((c, i) => i >= firstNeeded && c >= NEED).length);
+		progress = $state.raw<SungReply | null>(null);
+	/** The seconds of harmonics per band of the time through the bands being sung, and the first needed. */
+	const covered = $derived(progress?.fit?.coverage.covered ?? Array(BANDS).fill(0)),
+		firstNeeded = $derived(progress?.fit?.coverage.first ?? 0),
+		full = $derived(covered.filter((c, i) => i >= firstNeeded && c >= NEED).length);
 	/** The latest recording, to download. */
 	let recording = $state<{ ipa: Ipa; url: string } | null>(null);
 	/** Ends the recording early. */
@@ -76,17 +64,6 @@
 	const recorder = new Recorder();
 	$effect(() => () => recorder.close());
 
-	function fit(x: Float32Array, rate: number) {
-		const worker = new Worker(new URL('../sung-worker.ts', import.meta.url), { type: 'module' });
-		return new Promise<SungReply>((resolve) => {
-			worker.onmessage = ({ data }: MessageEvent<SungReply>) => {
-				worker.terminate();
-				resolve(data);
-			};
-			worker.postMessage({ x, rate } satisfies SungRequest, [x.buffer]);
-		});
-	}
-
 	const ratios = (vowel: number[], ah: number[]) =>
 		vowel.map((f, i) => Math.round((f / ah[i]) * 100) / 100);
 
@@ -104,13 +81,22 @@
 			return;
 		}
 		trace = [];
-		covered = Array(BANDS).fill(0);
+		progress = null;
 		phase = 'record';
+		const worker = new Worker(new URL('../sung-worker.ts', import.meta.url), { type: 'module' });
+		const send = (m: SungRequest, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
+		let finished: (r: SungReply) => void;
+		const final = new Promise<SungReply>((resolve) => (finished = resolve));
+		worker.onmessage = ({ data }: MessageEvent<SungReply>) => {
+			progress = data;
+			if (data.final) finished(data);
+			else if (data.fit?.time === 3 && data.steady) done?.();
+		};
+		send({ rate: recorder.rate });
 		recorder.start();
 		const start = performance.now();
 		await new Promise<void>((resolve) => {
-			let frame = 0,
-				before = start;
+			let frame = 0;
 			done = () => {
 				cancelAnimationFrame(frame);
 				done = null;
@@ -118,39 +104,36 @@
 			};
 			const follow = (t: number) => {
 				now = Math.max(0, (t - start) / 1000);
-				const dt = Math.min(0.1, Math.max(0, (t - before) / 1000)),
-					input = recorder.latest(),
-					p = detectPitch(input, recorder.rate);
-				before = t;
-				if (p !== null) {
-					trace = [...trace, [now, p]];
-					const next = covered.slice();
-					for (const f of new Set(harmonics(input, recorder.rate, p).freq.map(bandOf)))
-						if (f >= 0 && f < BANDS) next[f] += dt;
-					covered = next;
-				}
-				if (now >= LONGEST || (trace.length && full === BANDS - firstNeeded)) done!();
+				const p = detectPitch(recorder.latest(), recorder.rate),
+					x = recorder.take();
+				if (x.length) send({ x }, [x.buffer]);
+				if (p !== null) trace = [...trace, [now, p]];
+				if (now >= LONGEST) done!();
 				else frame = requestAnimationFrame(follow);
 			};
 			frame = requestAnimationFrame(follow);
 		});
+		const tail = recorder.take();
+		send({ x: tail }, [tail.buffer]);
 		const x = recorder.stop();
 		now = -1;
 		if (recording) URL.revokeObjectURL(recording.url);
 		recording = { ipa, url: URL.createObjectURL(wav(x, recorder.rate)) };
 		phase = 'fit';
-		const r = await fit(x, recorder.rate);
+		send({ end: true });
+		const { fit } = await final;
+		worker.terminate();
 		busy = null;
-		if (r.frames < MIN_FRAMES) {
-			error = `Only ${r.frames} moments had a clear pitch. Sing louder or nearer the microphone, and try again.`;
+		if (!fit || fit.frames < MIN_FRAMES) {
+			error = `Only ${fit?.frames ?? 0} moments had a clear pitch. Sing louder or nearer the microphone, and try again.`;
 			return;
 		}
-		last = { ipa, r };
-		const reference = ipa === 'a' ? r.formants : ah!;
+		last = { ipa, fit };
+		const reference = ipa === 'a' ? fit.formants : ah!;
 		patch.vowels[ipa] = {
 			vowel: 'sung',
-			sung: ratios(r.formants, reference),
-			measured: [reference, r.formants]
+			sung: ratios(fit.formants, reference),
+			measured: [reference, fit.formants]
 		};
 	}
 
@@ -223,6 +206,9 @@
 			ctx.stroke();
 			ctx.fillText(noteName(m), 2, y(m) - 2);
 		}
+		// The stretches left out, behind the pitch.
+		ctx.fillStyle = '#4a2530';
+		for (const t of progress?.fit?.stray ?? []) ctx.fillRect(x(t), 0, x(STRETCH), h - 30);
 		ctx.fillStyle = '#60d0e0';
 		for (const [t, m] of trace) ctx.fillRect(x(t) - 1.5, y(m) - 1.5, 3, 3);
 		if (now >= 0) {
@@ -234,9 +220,32 @@
 		}
 	});
 
-	const describe = (r: SungReply) =>
-		`F1 ${r.formants[0]}, F2 ${r.formants[1]}, F3 ${r.formants[2]} Hz, from ${noteName(r.low)} to ${noteName(r.high)}; ` +
-		`the lower and upper pitches agree within ${Math.round(r.spread * 100)}%`;
+	const formants = (f: number[]) => `F1 ${f[0]}, F2 ${f[1]}, F3 ${f[2]} Hz`;
+	const describe = (fit: Assessment) => {
+		const left = fit.stray.length * STRETCH;
+		return (
+			`${formants(fit.formants)}, from ${noteName(fit.low)} to ${noteName(fit.high)}` +
+			(left ? `, leaving out ${left} s that strayed from the rest` : '')
+		);
+	};
+	/** Whether the first and the second time through the bands found the same vowel, and what to say. */
+	const check = ({ times }: Assessment) => {
+		if (!times)
+			return {
+				ok: false,
+				text: "the bands were sung through only once, so it isn't known whether the vowel stayed the same"
+			};
+		const [a, b] = times,
+			change = a.map((f, i) => Math.abs(Math.log(f / b[i]))),
+			i = change.indexOf(Math.max(...change)),
+			ok = Math.exp(change[i]) - 1 <= MAX_SPREAD;
+		return {
+			ok,
+			text: ok
+				? `the first and the second time through the bands agree within ${Math.round((Math.exp(change[i]) - 1) * 100)}%`
+				: `F${i + 1} came out at ${a[i]} Hz the first time through the bands and ${b[i]} Hz the second, so the vowel may have changed`
+		};
+	};
 </script>
 
 <p class="hint">
@@ -288,24 +297,29 @@
 
 <p class="hint">
 	Sing: sing the vowel at whatever pitches are comfortable, moving around by a few semitones, in
-	slides, steps or anything, until the frequency bands under the plot have lit up, or press Done.
-	The low bands need the pitch to move; low pitches light more of them. Use headphones, or nothing
-	else playing.
+	slides, steps or anything, until the frequency bands under the plot have lit up, and then once
+	more, so that the two times can be compared; it stops once they're done and the formants hold
+	steady, or press Done. The low bands need the pitch to move; low pitches light more of them.
+	Stretches that stray from the vowel are left out, and their bands need singing again. Use
+	headphones, or nothing else playing.
 </p>
 {#if busy}
 	<p class="hint">
-		{nameOf(busy)}: {phase === 'record'
-			? `${full} of ${BANDS - firstNeeded} frequency bands`
-			: 'finding the formants…'}
+		{nameOf(busy)}: {phase === 'fit'
+			? 'finding the formants…'
+			: progress?.fit?.time === 3
+				? 'waiting for the formants to hold steady'
+				: `${progress?.fit?.time === 2 ? 'second' : 'first'} time through: ${full} of ${BANDS - firstNeeded} frequency bands`}{#if progress?.fit && phase === 'record'};
+			so far {formants(progress.fit.formants)}{/if}
 	</p>
 {/if}
 <canvas bind:this={canvas} bind:clientWidth={width} style="height: 140px"></canvas>
 {#if error}<p class="warn">{error}</p>{/if}
 {#if last}
+	{@const c = check(last.fit)}
 	<p class="hint">
-		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.spread > MAX_SPREAD}<span class="warn"
-				>{' — so the formants depend on which pitches were sung: try again, over more pitches'}</span
-			>{/if}.
+		{nameOf(last.ipa)}: {describe(last.fit)};
+		<span class:warn={!c.ok}>{c.text}</span>{#if !c.ok}: sing again, or keep this one{/if}.
 	</p>
 {/if}
 {#if recording && !busy}

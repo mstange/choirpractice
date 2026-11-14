@@ -35,10 +35,12 @@ export class Recorder {
 	}
 
 	#chunks: Float32Array[] = [];
+	#taken = 0;
 
 	/** Starts recording the input. */
 	start() {
 		this.#chunks = [];
+		this.#taken = 0;
 		this.#node!.port.onmessage = ({ data }: MessageEvent<Float32Array>) => this.#chunks.push(data);
 		this.#node!.port.postMessage(true);
 	}
@@ -47,10 +49,15 @@ export class Recorder {
 	stop() {
 		this.#node!.port.postMessage(false);
 		this.#node!.port.onmessage = null;
-		const x = new Float32Array(this.#chunks.reduce((n, c) => n + c.length, 0));
-		let at = 0;
-		for (const c of this.#chunks) x.set(c, (at += c.length) - c.length);
+		const x = join(this.#chunks);
 		this.#chunks = [];
+		return x;
+	}
+
+	/** The input recorded since the last `take()`, or since `start()`. */
+	take() {
+		const x = join(this.#chunks.slice(this.#taken));
+		this.#taken = this.#chunks.length;
 		return x;
 	}
 
@@ -59,6 +66,13 @@ export class Recorder {
 		this.#analyser?.getFloatTimeDomainData(this.#buf);
 		return this.#buf;
 	}
+}
+
+function join(chunks: Float32Array[]) {
+	const x = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+	let at = 0;
+	for (const c of chunks) x.set(c, (at += c.length) - c.length);
+	return x;
 }
 
 /** `x` as a 16-bit WAV file. */

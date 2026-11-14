@@ -1,11 +1,11 @@
 // Writes WAV files for listening to a patch beside the recorded choir: per vowel and section, for
-// each key that the section sings the vowel on long enough, its longest note on that key three
-// times: the choir's whole note, consonants and all; the choir's sustain, without them; and the
-// patch's sustain on the same key, bent to the choir's mean pitch. All at the same loudness. And
-// prints where the patch's spectrum differs from the choir's, per octave.
+// each key that the section sings the vowel on long enough, its longest note on that key twice:
+// the choir's sustain, without the consonants, and the patch's sustain on the same key, bent to
+// the choir's mean pitch, at the same loudness; with --whole, first the choir's whole note,
+// consonants and all. And prints where the patch's spectrum differs from the choir's, per octave.
 //
 // Usage: node scripts/choir/compare.ts [preset name or patch JSON, default Recorded Choir]
-//   [vowels, default a ɛ i ɔ u] [--out directory, default .dev/choir/compare]
+//   [vowels, default a ɛ i ɔ u] [--whole] [--out directory, default .dev/choir/compare]
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank, SpessaSynthProcessor } from 'spessasynth_core';
 import { keyFreq } from '../../src/lib/dsp.ts';
@@ -23,6 +23,7 @@ import {
 } from './data.ts';
 
 const args = process.argv.slice(2),
+	whole = args.includes('--whole') && args.splice(args.indexOf('--whole'), 1).length > 0,
 	outAt = args.indexOf('--out'),
 	out = outAt >= 0 ? args.splice(outAt, 2)[1] : `${root}.dev/choir/compare`,
 	[which = 'Recorded Choir', ...listed] = args,
@@ -152,24 +153,24 @@ for (const vowel of vowels) {
 				to = end - SUSTAIN_BEFORE,
 				cents = 1200 * Math.log2(n.f0 / keyFreq(n.key)),
 				sustain = mix.slice(Math.round(from * rate), Math.round(to * rate)),
-				whole = mix.slice(
+				note = mix.slice(
 					Math.round((n.t - BEFORE) * rate),
 					Math.round((end + (end < n.t + n.d ? 0 : AFTER)) * rate)
 				),
 				[l, r] = render(bank, n.key, cents, to - from, rate);
 			const gain = RMS / rms(sustain),
 				ours = RMS / Math.sqrt((rms(l) ** 2 + rms(r) ** 2) / 2);
-			const w = faded(whole, gain, rate),
+			const w = faded(note, gain, rate),
 				s = faded(sustain, gain, rate);
+			if (whole) clips.push({ l: w, r: w, gap: 0.3 });
 			clips.push(
-				{ l: w, r: w, gap: 0.3 },
 				{ l: s, r: s, gap: 0.3 },
 				{ l: faded(l, ours, rate), r: faded(r, ours, rate), gap: 1 }
 			);
 			cues.push(
 				`${at.toFixed(1)} s: key ${n.key} (${cents >= 0 ? '+' : ''}${cents.toFixed(0)} cents), "${n.text}"`
 			);
-			at += (w.length + s.length + l.length) / rate + 1.6;
+			at += ((whole ? w.length + 0.3 * rate : 0) + s.length + l.length) / rate + 1.3;
 
 			const theirs = harmonicPowers(mix, rate, from, to, pitchAt).level,
 				f0 = keyFreq(n.key) * 2 ** (cents / 1200),
@@ -201,5 +202,5 @@ for (const vowel of vowels) {
 	);
 }
 console.log(
-	`\nwrote ${out}/<vowel>-<section>.wav, each note as: the choir's whole note, its sustain, the patch`
+	`\nwrote ${out}/<vowel>-<section>.wav, each note as: ${whole ? "the choir's whole note, " : ''}the choir's sustain, the patch`
 );

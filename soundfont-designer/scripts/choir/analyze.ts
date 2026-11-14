@@ -7,25 +7,21 @@
 // With --base, the patch to fit instead of MS Basic Aahs.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
-import { ifft, keyFreq } from '../../src/lib/dsp.ts';
+import { keyFreq } from '../../src/lib/dsp.ts';
 import { db, fitContour, measure, patchBank, type Harmonic } from '../../src/lib/measure.ts';
 import { CONTOUR_KEYS, complete } from '../../src/lib/patch.ts';
 import { MS_BASIC_AAHS } from '../../src/lib/presets.ts';
-import { SECTIONS, readNotes, root, sectionF0, sectionMix } from './data.ts';
+import { SECTIONS, harmonicPowers, readNotes, root, sectionF0, sectionMix } from './data.ts';
 
 const notes = readNotes();
 const args = process.argv.slice(2),
 	vowel = args[0] && !args[0].startsWith('--') ? args[0] : 'a',
 	writeTo = args.includes('--write') ? args[args.indexOf('--write') + 1] : null;
 
-const N = 4096,
-	HOP = 1024,
-	TOP = 10000,
-	/** Seconds left out at a note's start (the consonant, the onset) and end. */
+const /** Seconds left out at a note's start (the consonant, the onset) and end. */
 	SKIP_START = 0.15,
 	SKIP_END = 0.1,
 	MIN_LEFT = 0.3;
-const win = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
 const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
 
@@ -123,30 +119,10 @@ for (const section of SECTIONS) {
 				halves: [0, 1].map(() => ({ level: [], noise: [], notes: 0 }))
 			};
 		sums.set(k0, entry);
-		const level: number[] = [],
-			noise: number[] = [],
-			bin = rate / N;
-		for (let s = Math.round(from * rate); s + N <= Math.round(to * rate); s += HOP) {
-			const p = pitches((s + N / 2) / rate).filter((f) => f);
-			if (p.length < 2) continue;
-			const f0 = 2 ** mean(p.map(Math.log2)),
-				re = new Float64Array(N),
-				im = new Float64Array(N);
-			for (let i = 0; i < N; i++) re[i] = mix[s + i] * win[i];
-			ifft(re, im);
-			const power = (k: number) => re[k] ** 2 + im[k] ** 2;
-			for (let h = 1; (h + 0.75) * f0 < TOP; h++) {
-				const lo = Math.round(((h - 0.25) * f0) / bin),
-					hi = Math.round(((h + 0.25) * f0) / bin),
-					gap = [];
-				for (let k = hi; k <= Math.round(((h + 0.75) * f0) / bin); k++) gap.push(power(k));
-				const floor = median(gap);
-				let sum = 0;
-				for (let k = lo; k <= hi; k++) sum += Math.max(0, power(k) - floor);
-				level[h - 1] = (level[h - 1] ?? 0) + sum;
-				noise[h - 1] = (noise[h - 1] ?? 0) + floor * (hi - lo + 1);
-			}
-		}
+		const { level, noise } = harmonicPowers(mix, rate, from, to, (t) => {
+			const p = pitches(t).filter((f) => f);
+			return p.length < 2 ? null : 2 ** mean(p.map(Math.log2));
+		});
 		const total = level.reduce((s, v) => s + v, 0);
 		if (!total) continue;
 		add(entry.halves[entry.notes % 2], level, noise, total);

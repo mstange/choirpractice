@@ -11,7 +11,7 @@
 		type Patch,
 		type Vowel
 	} from './lib/patch.ts';
-	import { STARTING_POINTS } from './lib/presets.ts';
+	import { MS_BASIC_AAHS, STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
 	import Keyboard from './lib/ui/Keyboard.svelte';
@@ -23,7 +23,8 @@
 	const STORE = 'soundfont-designer:patch',
 		SAVED = 'soundfont-designer:saved',
 		PROGRAM = 'soundfont-designer:program';
-	let patch = $state<Patch>(complete(JSON.parse(localStorage.getItem(STORE) ?? '{}')));
+	const stored = localStorage.getItem(STORE);
+	let patch = $state<Patch>(stored ? complete(JSON.parse(stored)) : structuredClone(MS_BASIC_AAHS));
 	/** Patches saved by name. */
 	let saved = $state<Record<string, Patch>>(JSON.parse(localStorage.getItem(SAVED) ?? '{}'));
 	/** The General MIDI program of the exported file's preset. */

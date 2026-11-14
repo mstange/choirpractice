@@ -14,15 +14,19 @@
 		singVowels = $bindable()
 	}: { patch: Patch; synth: DesignerSynth | null; singVowels: boolean } = $props();
 
-	/** The ranges to slide over, an octave each. */
+	/** The ranges to sing over, an octave each. */
 	const RANGES: [string, number][] = [
 		['A2–A3', 45],
 		['D3–D4', 50],
 		['A3–A4', 57]
 	];
-	/** Seconds of the starting tone, and of the slide up and back down. */
-	const CUE = 3,
-		SLIDE = 8;
+	/**
+	 * The seconds of pitch that each semitone of the range wants, and the most seconds recorded:
+	 * the recording stops once every semitone has its seconds. Moving the pitch moves the harmonics
+	 * through the formants, so how it moves doesn't matter, only that it covers the range.
+	 */
+	const NEED = 0.3,
+		LONGEST = 30;
 	/** The fewest frames with a clear pitch that a fit is made from, and the most error trusted. */
 	const MIN_FRAMES = 100,
 		MAX_ERROR = 6;
@@ -34,12 +38,15 @@
 
 	let low = $state(RANGES[0][1]),
 		busy = $state<Ipa | null>(null),
-		phase = $state<'cue' | 'record' | 'fit'>('cue'),
+		phase = $state<'record' | 'fit'>('record'),
 		error = $state(''),
 		last = $state<{ ipa: Ipa; r: SungReply } | null>(null);
-	/** The time since the cue started, and the pitch sung, for the plot. */
+	/** The time since the recording started, the pitch sung, and the seconds sung per semitone. */
 	let now = $state(-1),
-		trace = $state.raw<[number, number][]>([]);
+		trace = $state.raw<[number, number][]>([]),
+		covered = $state.raw<number[]>(Array(12).fill(0));
+	/** Ends the recording early. */
+	let done: (() => void) | null = null;
 
 	const ah = $derived(sungAh(patch));
 	/** The sung vowels that were measured against another "ah" than the sung a's. */
@@ -50,12 +57,6 @@
 				)
 			: []
 	);
-
-	/** The pitch to sing at `t` seconds from the start of the cue. */
-	const target = (t: number) => {
-		const s = Math.max(0, t - CUE);
-		return low + 12 * (s < SLIDE / 2 ? s / (SLIDE / 2) : Math.max(0, 2 - s / (SLIDE / 2)));
-	};
 
 	const recorder = new Recorder();
 	$effect(() => () => recorder.close());
@@ -88,26 +89,38 @@
 			return;
 		}
 		trace = [];
-		const start = performance.now();
-		let frame = 0;
-		const follow = () => {
-			now = (performance.now() - start) / 1000;
-			const p = recorder.pitch();
-			if (p !== null) trace = [...trace, [now, p]];
-			frame = requestAnimationFrame(follow);
-		};
-		follow();
-		phase = 'cue';
-		await recorder.cue(low, CUE);
+		covered = Array(12).fill(0);
 		phase = 'record';
-		const x = await recorder.record(SLIDE);
-		cancelAnimationFrame(frame);
+		recorder.start();
+		const start = performance.now();
+		await new Promise<void>((resolve) => {
+			let frame = 0,
+				before = start;
+			done = () => {
+				cancelAnimationFrame(frame);
+				done = null;
+				resolve();
+			};
+			const follow = (t: number) => {
+				now = Math.max(0, (t - start) / 1000);
+				const dt = Math.min(0.1, Math.max(0, (t - before) / 1000)),
+					p = recorder.pitch(),
+					i = p === null ? -1 : Math.floor(p - low);
+				before = t;
+				if (p !== null) trace = [...trace, [now, p]];
+				if (i >= 0 && i < 12) covered = covered.with(i, covered[i] + dt);
+				if (now >= LONGEST || covered.every((c) => c >= NEED)) done!();
+				else frame = requestAnimationFrame(follow);
+			};
+			frame = requestAnimationFrame(follow);
+		});
+		const x = recorder.stop();
 		now = -1;
 		phase = 'fit';
 		const r = await fit(x, recorder.rate);
 		busy = null;
 		if (r.frames < MIN_FRAMES) {
-			error = `Only ${r.frames} moments had a clear pitch. Sing louder or nearer the microphone, along the line, and try again.`;
+			error = `Only ${r.frames} moments had a clear pitch. Sing louder or nearer the microphone, and try again.`;
 			return;
 		}
 		last = { ipa, r };
@@ -156,9 +169,15 @@
 	$effect(() => {
 		void width;
 		const { ctx, w, h } = prepare(canvas);
-		const total = CUE + SLIDE,
-			x = (t: number) => (t / total) * w,
+		// The time axis grows with the recording, from 8 s.
+		const span = Math.max(8, now, trace.at(-1)?.[0] ?? 0),
+			x = (t: number) => (t / span) * w,
 			y = (m: number) => h - 6 - ((m - low + 2) / 16) * (h - 12);
+		// The semitones of the range, brighter as they are covered.
+		covered.forEach((c, i) => {
+			ctx.fillStyle = `rgba(240, 180, 41, ${0.08 + 0.4 * Math.min(1, c / NEED)})`;
+			ctx.fillRect(0, y(low + i + 1), w, y(low + i) - y(low + i + 1) - 1);
+		});
 		ctx.strokeStyle = '#2c303a';
 		ctx.fillStyle = '#6a7080';
 		for (const m of [low, low + 6, low + 12]) {
@@ -168,17 +187,6 @@
 			ctx.stroke();
 			ctx.fillText(noteName(m), 2, y(m) - 2);
 		}
-		ctx.beginPath();
-		ctx.moveTo(x(CUE), 0);
-		ctx.lineTo(x(CUE), h);
-		ctx.stroke();
-		// The line to sing along, and what was sung.
-		ctx.strokeStyle = '#f0b429';
-		ctx.lineWidth = 3;
-		ctx.beginPath();
-		for (let px = 0; px <= w; px += 2) ctx.lineTo(px, y(target((px / w) * total)));
-		ctx.stroke();
-		ctx.lineWidth = 1;
 		ctx.fillStyle = '#60d0e0';
 		for (const [t, m] of trace) ctx.fillRect(x(t) - 1.5, y(m) - 1.5, 3, 3);
 		if (now >= 0) {
@@ -243,8 +251,9 @@
 >
 
 <p class="hint">
-	Sing: hold the starting tone while it plays, then slide up and back down along the yellow line, in
-	a range that is comfortable. Use headphones, or nothing else playing.
+	Sing: sing the vowel at any pitches in a range that is comfortable, in slides, steps or anything,
+	until every semitone of the range has lit up, or press Done. Use headphones, or nothing else
+	playing.
 </p>
 <div class="row">
 	Range
@@ -253,11 +262,9 @@
 	{/each}
 	{#if busy}
 		<span class="hint"
-			>{nameOf(busy)}: {phase === 'cue'
-				? `starting tone ${noteName(low)}…`
-				: phase === 'record'
-					? 'slide up and back down'
-					: 'finding the formants…'}</span
+			>{nameOf(busy)}: {phase === 'record'
+				? `${covered.filter((c) => c >= NEED).length} of 12 semitones`
+				: 'finding the formants…'}</span
 		>
 	{/if}
 </div>
@@ -266,7 +273,7 @@
 {#if last}
 	<p class="hint">
 		{nameOf(last.ipa)}: {describe(last.r)}{#if last.r.error > MAX_ERROR}<span class="warn"
-				>{' — a poor fit: try again, more steadily'}</span
+				>{' — a poor fit: try again'}</span
 			>{/if}.
 	</p>
 {/if}
@@ -306,11 +313,15 @@
 					</select>
 				</td>
 				<td>
-					<button
-						disabled={!!busy || (v.ipa !== 'a' && !ah)}
-						title={v.ipa !== 'a' && !ah ? 'Sing "ah" first' : `Sing ${v.name} as in ${v.word}`}
-						onclick={() => sing(v.ipa)}>{busy === v.ipa ? 'Singing…' : 'Sing'}</button
-					>
+					{#if busy === v.ipa}
+						<button disabled={phase !== 'record'} onclick={() => done?.()}>Done</button>
+					{:else}
+						<button
+							disabled={!!busy || (v.ipa !== 'a' && !ah)}
+							title={v.ipa !== 'a' && !ah ? 'Sing "ah" first' : `Sing ${v.name} as in ${v.word}`}
+							onclick={() => sing(v.ipa)}>Sing</button
+						>
+					{/if}
 				</td>
 			</tr>
 		{/each}

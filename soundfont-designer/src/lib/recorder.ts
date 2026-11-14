@@ -35,36 +35,24 @@ export class Recorder {
 		return this.#ctx?.sampleRate ?? 48000;
 	}
 
-	/** Plays a soft tone at `midi` for `seconds`, to start from, and resolves when it has ended. */
-	cue(midi: number, seconds: number) {
-		const ctx = this.#ctx!,
-			t = ctx.currentTime,
-			osc = new OscillatorNode(ctx, { type: 'triangle', frequency: 440 * 2 ** ((midi - 69) / 12) }),
-			gain = new GainNode(ctx, { gain: 0 });
-		gain.gain.setTargetAtTime(0.15, t, 0.02);
-		gain.gain.setTargetAtTime(0, t + seconds - 0.1, 0.02);
-		osc.connect(gain).connect(ctx.destination);
-		osc.start(t);
-		osc.stop(t + seconds);
-		return new Promise<void>((resolve) => (osc.onended = () => resolve()));
+	#chunks: Float32Array[] = [];
+
+	/** Starts recording the input. */
+	start() {
+		this.#chunks = [];
+		this.#node!.port.onmessage = ({ data }: MessageEvent<Float32Array>) => this.#chunks.push(data);
+		this.#node!.port.postMessage(true);
 	}
 
-	/** The input of the next `seconds`. */
-	record(seconds: number) {
-		const node = this.#node!,
-			chunks: Float32Array[] = [];
-		node.port.onmessage = ({ data }: MessageEvent<Float32Array>) => chunks.push(data);
-		node.port.postMessage(true);
-		return new Promise<Float32Array>((resolve) =>
-			setTimeout(() => {
-				node.port.postMessage(false);
-				node.port.onmessage = null;
-				const x = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
-				let at = 0;
-				for (const c of chunks) x.set(c, (at += c.length) - c.length);
-				resolve(x);
-			}, seconds * 1000)
-		);
+	/** Stops recording, and gives the input since `start()`. */
+	stop() {
+		this.#node!.port.postMessage(false);
+		this.#node!.port.onmessage = null;
+		const x = new Float32Array(this.#chunks.reduce((n, c) => n + c.length, 0));
+		let at = 0;
+		for (const c of this.#chunks) x.set(c, (at += c.length) - c.length);
+		this.#chunks = [];
+		return x;
 	}
 
 	/** The MIDI pitch of the latest input, or null if it has no clear pitch. */

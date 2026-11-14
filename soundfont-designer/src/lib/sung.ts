@@ -1,4 +1,4 @@
-// A sung vowel's formants, from a recording of a glide: per frame its pitch and the level of each
+// A sung vowel's formants, from a recording sung over a range of pitches: per frame its pitch and the level of each
 // harmonic, and the formants of a cascade of resonators that fit those levels best, with a gain of
 // its own for each frame and a tilt for the voice and the microphone.
 import { detectPitch } from '../../../site/src/lib/pitch.ts';

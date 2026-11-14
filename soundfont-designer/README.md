@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-The choir app (`../site`) needs its own `npm install` too: the page plays with its synthesizer.
+`npm run dev` serves the page at http://localhost:5288/, a port other than the choir app's, so that the browser doesn't run the choir app's service worker on it. The choir app (`../site`) needs its own `npm install` too: the page plays with its synthesizer.
 
 The page plays the pieces that the choir app knows: the demo, and the seasons that the choir app opened before, which it keeps in `localStorage`. Deployed at `choirpractice.app/soundfont-designer/`, the page shares the choir app's `localStorage`, and fetches from the same media host (`VITE_MEDIA_BASE`). With `npm run dev`, it also offers all seasons in `../media` (or the directory that `MEDIA` names: `MEDIA=/path/to/media npm run dev`), which it serves at `media/`. `npm run build` in `../site` builds the page into `site/build/soundfont-designer/`, and `npm run preview` there serves it at `/soundfont-designer/`, next to the choir app. It needs the pieces' `piece.json` and `score.mid`, and `media/soundfont/` for the other instruments.
 

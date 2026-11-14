@@ -36,5 +36,7 @@ export default defineConfig({
 	worker: { format: 'es' },
 	// The synthesizer is the choir app's, in ../site, and should use the same spessasynth as the rest.
 	resolve: { dedupe: ['spessasynth_core'] },
-	server: { fs: { allow: ['..'] } }
+	// A port of its own: on the choir app's (Vite's default), the browser would keep the choir app's
+	// service worker, which in development imports ../site/src/service-worker/index.ts from here.
+	server: { port: 5288, strictPort: true, fs: { allow: ['..'] } }
 });

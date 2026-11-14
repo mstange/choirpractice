@@ -61,6 +61,36 @@ export const STARTING_POINTS: Patch[] = [
 		vowels: { u: { vowel: 'sung', sung: [0.54, 0.32, 0.77], measured: [] } },
 		selected: 'u'
 	}),
+	// MS Basic Aahs fitted to a recorded choir, the Choral Singing Dataset's Locus iste, with
+	// scripts/choir/ (see its README): the contour and the noise between the harmonics to the four
+	// sections' notes on "ah", the vowels' formants as ratios to the sections' "ah", and the
+	// vibrato to that of the singers' mean pitch.
+	complete({
+		...MS_BASIC_AAHS,
+		name: 'Recorded Choir',
+		tone: { ...MS_BASIC_AAHS.tone, aperiodic: -26, aperiodicSlope: -13, aperiodicTilt: 8 },
+		vowels: {
+			ɛ: { vowel: 'sung', sung: [0.74, 1.43, 0.93], measured: [] },
+			ɔ: { vowel: 'sung', sung: [0.74, 0.88, 1.01], measured: [] },
+			i: { vowel: 'sung', sung: [0.58, 1.68, 0.95], measured: [] },
+			u: { vowel: 'sung', sung: [0.59, 0.81, 1.03], measured: [] }
+		},
+		contour: [
+			[
+				-25.5, -25.5, -26, -26.5, -25, -18.5, -15, -13.5, -6.5, 0, -11, -29, -27.5, -24, -37.5,
+				-45.5, -37.5, -25.5, -9, -22.5, -19, -14.5, -15, -16.5, -17
+			],
+			[
+				-23.5, -24, -23.5, -24, -23, -19.5, -18, -16, -9, -1.5, -9.5, -23.5, -23, -12.5, -17.5, -32,
+				-37, -25, -13.5, -29, -35, -26.5, -25.5, -21.5, -21.5
+			],
+			[
+				-22, -21.5, -21, -20.5, -19.5, -18, -16.5, -15, -12.5, -9.5, -11, -18.5, -23.5, -14, -7.5,
+				-16, -32, -27.5, -22, -27, -35, -32, -31, -29.5, -29
+			]
+		],
+		vibrato: { ...MS_BASIC_AAHS.vibrato, rate: 6, depth: 12 }
+	}),
 	d,
 	complete({
 		name: 'Soft Aah',

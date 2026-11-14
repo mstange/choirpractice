@@ -1,0 +1,38 @@
+# Fitting a patch to a recorded choir
+
+These scripts fit a patch to the [Choral Singing Dataset](https://zenodo.org/records/1286570) (Cuesta et al., 2018): the Anton Bruckner Choir of Barcelona singing Bruckner's _Locus iste_, Guerrero's _Niño Dios_ and _El Rossinyol_, four singers per section, each on a close cardioid microphone. The four singers of a section sang together; the sections were recorded apart, to the same backing track. Mixing a section's four tracks gives a recording of that section in unison. The scripts use _Locus iste_, whose Latin `tools/vowels.py` reads. The **Recorded Choir** starting point in `src/lib/presets.ts` came from them.
+
+## Data
+
+Not checked in; everything goes into `../.dev/choir/` (the repository's `.dev/`).
+
+- **The dataset:** version 5 ([record 2649950](https://zenodo.org/records/2649950), 1.1 GB), unpacked into `.dev/choir/csd5/`, or anywhere that `CSD` names. It has each singer's pitch track and the note annotations of each section, which the scripts need, under CC BY-NC 4.0. Its recordings are those of version 3 ([record 1286570](https://zenodo.org/records/1286570), CC BY 4.0) resampled from 48 to 44.1 kHz. Some soprano tracks are 64-bit floats.
+- **The score:** the MuseScore 3 file of _Locus iste_ linked from [CPDL](<https://www.cpdl.org/wiki/index.php/Locus_iste_(Anton_Bruckner)>), `https://www.cafe-puccini.dk/Bruckner/musescore/Locus_Iste.mscz`. Saved as MuseScore 4 with `mscore -o locus-iste.mscz Locus_Iste.mscz`, then built into `media/csd/locus-iste/` as a piece of a season `csd` whose `pieces.json` gives it `"languages": [["", "la"]]`. `tools/build.sh` stops in `engrave.py` on this score (`bass: segments differ from the score's`), after `extract.py`; running `extract.py` and `vowels.py` as `build.sh` does gives the `piece.json` that the scripts need.
+
+## Scripts
+
+Run from the repository's root.
+
+1. `node soundfont-designer/scripts/choir/align.ts` aligns each section's note annotations with the score's notes by their pitches (Needleman–Wunsch), so that each recorded note has its syllable's vowel, and writes `.dev/choir/notes.json`. It matches every annotated note (113, 115, 118 and 94 of 114, 117, 119 and 94 in the score). It prints the notes more than a quarter tone from the score: 12 of the tenors' and 8 of the basses', all flat, by 50 to 75 cents, where their neighbours are in tune, so the singers were flat and the alignment is right. Each section has about 28 s of "ah", 50 s of "eh", 22 s of "aw", 10 to 20 s of "ee" and 10 s of "oo".
+2. `node soundfont-designer/scripts/choir/analyze.ts [vowel] [--base patch.json] [--write patch.json]` measures the sections' notes on the vowel (a by default), from 0.15 s after their start to 0.1 s before their end, and fits a patch to them (MS Basic Aahs, or the one of `--base`):
+   - **Harmonics:** in windows of 4096 samples (93 ms), each harmonic's power at the singers' mean pitch, with the noise beside it, as `src/lib/measure.ts` measures a rendered note; each note normalized to the same power, and summed per section and key. Then the contour fitted to them by `fitContour()`, as Match fits it to Choir Aahs.
+   - **Noise between the harmonics:** the patch's aperiodic level, slope and tilt changed by a linear regression of the choir's noise against its harmonics minus the patch's, over the harmonics up to 5 kHz.
+   - **A test of the fit:** fitted on every other note of each key and measured on the others, and the two halves of the choir measured against each other, which no fit can come nearer than.
+   - **Ensemble:** from the singers' pitch tracks, their spread around their mean pitch, and the vibrato of each singer and of their mean pitch: the patch's one vibrato for all its copies stands for the latter.
+3. `node soundfont-designer/scripts/choir/formants.ts base.json out.json` fits each vowel's F1 to F3 per section, with the designer's Sing (`assess()` of `src/lib/sung.ts`) on the section's frames of that vowel, and gives the patch each vowel's ratios to the "ah", the median over the four sections.
+
+## What they found
+
+- **"Ah":** MS Basic Aahs is 6.6 dB rms per harmonic from the choir's "ah", about as far as MS Basic's Choir Aahs itself (6.5). Its contour fitted to the choir brings it to 4.2. Fitted on half of the notes, it is 4.3 to 4.5 dB from the other half, where the two halves are 3.3 dB from each other, so the fit is of the choir rather than of its notes.
+- **Noise between the harmonics:** the choir's is louder than Choir Aahs's on low keys (bass G2: −9 dB against the harmonics near 1 kHz, Choir Aahs −14). The regression changed the aperiodic noise by +2.3 dB, −1.7 per octave of key and +1.2 per octave of frequency, which brought the noise from 6.3 to 4.9 dB rms from the choir's.
+- **Ensemble:** the singers of a section are 13 to 17 cents (rms) around their mean pitch; two of them, a median of 33 to 45 cents apart. That is what MS Basic Aahs's 7 copies within 45 cents have (13 cents rms), so the ensemble is unchanged. Each singer's vibrato is 16 to 22 cents deep at 5.8 to 7.2 Hz; their mean pitch's, which partly averages out, 10 to 19 cents at 5.6 to 6.8 Hz (4 to 10 notes of at least 1 s per section). Recorded Choir has 12 cents at 6 Hz, against MS Basic Aahs's 8 cents at 5.3 Hz. A section of more singers would average out more.
+- **Other vowels:** with the contour fitted to "ah", the vowels of Csound's table are 7.3 to 9.0 dB rms from the choir's "eh", "aw", "ee" and "oo"; a contour fitted to each vowel apart comes to 4.4 to 5.6 dB on the notes that it wasn't fitted on, so the table's formants are what is off. With the formants fitted from the choir, Recorded Choir is 5.2, 4.9, 5.3 and 5.7 dB from them, against 9.0, 7.1, 11.3 and 9.1 for Choir Aahs. The formants were fitted on all of the vowel's notes, so these errors are on the notes that they were fitted on.
+- **The fitted formants:** per section, F1 to F3 of "ah" are 507/1269/3013 Hz (sopranos), 849/1231/3004 (altos), 698/1085/2760 (tenors) and 518/972/2612 (basses). The sopranos' F1 is unreliable: their pitches go above 500 Hz, where the harmonics are too far apart to place it. Three of the twenty fits went astray: the sopranos' "aw" (F1 181 Hz), the tenors' "aw" (F2 2640 Hz) and the basses' "oo" (F2 2459 Hz); the median of the four sections leaves each of them out. The ratios to "ah" (F1, F2, F3): "eh" 0.74, 1.43, 0.93; "aw" 0.74, 0.88, 1.01; "ee" 0.58, 1.68, 0.95; "oo" 0.59, 0.81, 1.03.
+
+## Limitations
+
+- **Close microphones:** the recordings are of each singer from close by, which brings out the low frequencies (the proximity effect) and has little of the room. The contour takes on both. Choir Aahs is a recording too, of unknown microphones and room.
+- **Few notes per key:** 1 to 8 notes on "ah" per section and key, at whatever dynamics the piece has them; the dynamics change the timbre, which the fit averages over.
+- **Four singers per section:** a bigger section beats and spreads differently.
+- **Only the sustain:** the onset, the release and the dynamics are MS Basic Aahs's, from Choir Aahs. The notes' onsets have the consonants in them, which the analysis leaves out.
+- **Not listened to:** the numbers say how near the spectrum came, not how it sounds.

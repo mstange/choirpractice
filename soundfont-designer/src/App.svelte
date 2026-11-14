@@ -385,14 +385,48 @@
 		<section>
 			<h2>Vowels of the lyrics</h2>
 			<p class="hint">
-				The choir app sings each syllable on its vowel, from the instrument's preset for it. Keep
-				makes the vowel being edited (picked above, or sung) this one's; Edit brings it back to be
-				edited. A vowel not kept sings the nearest kept one, or Csound's table's: the arrow says
-				which. Once a vowel is kept, Export SF3 writes a preset for each.
+				The choir app can sing each syllable of the lyrics on its own vowel. Give each vowel in the
+				list a sound with Keep. Vowels in yellow have the sound that is set up above right now, the
+				one that the keyboard plays.
 			</p>
+			<details class="hint">
+				<summary>How this works</summary>
+				<p>
+					"moon" is sung on oo, "see" on ee, "night" on ah moving to ih. For that, the exported
+					instrument needs a sound for each vowel in the list below.
+				</p>
+				<p>To give a vowel its sound:</p>
+				<ol>
+					<li>
+						Set up the sound in the sections above: press one of the Vowel buttons (ah, eh, ee, oh,
+						oo), or sing a vowel in "Tone: sing a vowel".
+					</li>
+					<li>
+						Press Keep in that vowel's row. For example: sing the "oo" of "book", then press Keep in
+						the uu row.
+					</li>
+				</ol>
+				<p>
+					Edit loads a row's sound back into the sections above, so that you can play it on the
+					keyboard, change it, and Keep it again. Forget removes the sound that you kept.
+				</p>
+				<p>
+					The third column says which sound each vowel gets. In bold: a sound that you kept for this
+					vowel, either "sung" or the Vowel button that you kept ("button ee"). Otherwise the vowel
+					borrows the nearest sound that there is: a Vowel button ("button oh" for aw, as in "law"),
+					or a sound that you kept for a nearby vowel ("ee: sung" for ih, as in "sit", once you have
+					kept a sung ee).
+				</p>
+				<p>
+					Export SF3 writes a sound for every vowel in the list once you have kept at least one.
+					Until then it writes only the one sound set up above, which the choir app then sings on
+					every syllable.
+				</p>
+			</details>
 			<label class="choice"
-				><input type="checkbox" bind:checked={singVowels} /> The pieces sing the lyrics' vowels, and the
-				keyboard the vowel being edited (each build takes longer)</label
+				><input type="checkbox" bind:checked={singVowels} /> Play the pieces with each syllable on its
+				vowel, as the exported file would. While this is on, the keyboard plays the sound set up above,
+				and every change takes longer to build, because each vowel is built.</label
 			>
 			<table class="vowels">
 				<tbody>
@@ -400,12 +434,16 @@
 						{@const { from, formants } = vowelFormants(patch, v.ipa)}
 						{@const kept = patch.vowels[v.ipa]}
 						<tr class:edited={sameFormants(formants, editedFormants())}>
-							<td>{v.name}</td>
+							<td
+								title={sameFormants(formants, editedFormants())
+									? 'Has the sound that is set up above, which the keyboard plays'
+									: undefined}>{v.name}</td
+							>
 							<td class="dim">/{v.ipa}/ {v.word}</td>
-							<td class="dim">
-								{#if kept}{kept.vowel === 'sung' ? 'sung' : `table ${VOWEL_NAMES[kept.vowel]}`}
-								{:else if from === v.ipa}table
-								{:else}→ {LYRIC_VOWELS.find((x) => x.ipa === from)!.name}{/if}
+							<td class:dim={!kept} class:kept>
+								{#if formants.vowel !== 'sung'}button {VOWEL_NAMES[formants.vowel]}
+								{:else if from === v.ipa}sung
+								{:else}{LYRIC_VOWELS.find((x) => x.ipa === from)!.name}: sung{/if}
 							</td>
 							<td>
 								<button onclick={() => (patch.vowels[v.ipa as Ipa] = editedFormants())}>Keep</button
@@ -728,11 +766,24 @@
 	.warn {
 		color: #e8657a;
 	}
+	details p,
+	details ol {
+		margin: 4px 0;
+	}
+	details ol {
+		padding-left: 18px;
+	}
+	summary {
+		cursor: pointer;
+	}
 	.vowels td {
 		padding: 1px 6px 1px 0;
 	}
 	.vowels .dim {
 		color: var(--dim);
+	}
+	.vowels .kept {
+		font-weight: bold;
 	}
 	.vowels tr.edited td:first-child {
 		color: var(--accent);

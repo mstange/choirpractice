@@ -3,6 +3,7 @@
 // the next rather than starting anew.
 import type { ScoreEvent, ScoreNote } from './synth-engine.ts';
 import type { Part, Voice } from './types.ts';
+import { voiceBank, voiceType } from './voice-types.ts';
 import { VOWEL_BANK } from './vowels.ts';
 
 /** Seconds in which a melisma's note crossfades into the next. */
@@ -22,10 +23,12 @@ const DIPHTHONG_SHARE = 0.3,
 	DIPHTHONG_FADE = 0.1;
 
 /**
- * Sings each vocal part's syllables on their vowels: a bank select (see ScoreEvent) before the
- * first note of each syllable picks the vowel's preset (see vowels.ts), for parts whose syllables
- * have vowels. An instrument without vowels plays its one preset for all of them. A diphthong's
- * last note goes on legato into its second vowel, at the same key.
+ * Sings each vocal part's syllables on their vowels, with the presets of its voice type: a bank
+ * select (see ScoreEvent) before the first note of each syllable picks the preset of the vowel
+ * (see vowels.ts) for the part's voice type (see voice-types.ts), "ah" for a syllable without a
+ * vowel. An instrument without voice types plays the vowel's preset, and one without vowels its
+ * one preset for all of them. A diphthong's last note goes on legato into its second vowel, at
+ * the same key.
  *
  * Makes the notes of each melisma legato (see ScoreEvent): every note of a syllable after its
  * first, at another pitch than the note before. A repeated pitch starts anew, as a singer would
@@ -74,20 +77,20 @@ export function sing(events: ScoreEvent[], notes: ScoreNote[], parts: Part[], vo
 			changed = true;
 		}
 
-		if (!voice.syllables.some((s) => s.v)) continue;
 		// The bank of each syllable's vowel at its first note, and of a diphthong's second vowel
-		// near the end of its last.
-		const banks: [t: number, bank: number][] = [];
+		// near the end of its last, for the part's voice type.
+		const type = voiceType(voice.notes),
+			bankOf = (v: string) => voiceBank(type, VOWEL_BANK.get(v)!),
+			banks: [t: number, bank: number][] = [];
 		voice.notes.forEach((n, i) => {
 			const note = midi[i],
 				v = voice.syllables[n.s].v;
 			if (!note) return;
-			if (first(i))
-				banks.push([note.t0, VOWEL_BANK.get(typeof v === 'string' ? v : (v?.[0] ?? 'a'))!]);
+			if (first(i)) banks.push([note.t0, bankOf(typeof v === 'string' ? v : (v?.[0] ?? 'a'))]);
 			if (!last(i) || !Array.isArray(v)) return;
 			const t = note.t1 - Math.min(DIPHTHONG_END, DIPHTHONG_SHARE * (note.t1 - note.t0));
 			if (!ons.has(`${ch}:${note.key}:${note.t0}`)) return;
-			banks.push([t, VOWEL_BANK.get(v[1])!]);
+			banks.push([t, bankOf(v[1])]);
 			added.push(
 				{ t, data: [0x80 | ch, note.key, 0] },
 				{

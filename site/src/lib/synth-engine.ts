@@ -7,7 +7,7 @@ const GAIN_TIME = 0.05;
  * A MIDI channel message other than a program change, at a time in the score in seconds. `offset`
  * is added to the message's channel, for the channels beyond the score's 16. Since the page sets
  * each channel's program, a bank select (CC 0) plays the program's preset in that bank from the
- * next note on, or the program's first preset if its bank has none there.
+ * next note on, or in the bank that presetBank() falls back to.
  *
  * A note-on with `legato` doesn't start a note of its own: the note `from` of its channel, whose
  * note-off comes just before, crossfades into it over `fade` seconds, and it goes on from where
@@ -33,6 +33,19 @@ export type ScoreNote = {
 	onset?: number;
 	bank?: number;
 };
+/**
+ * The bank whose preset a bank select of `bank` plays, of `banks`, those that the program has
+ * presets in: the bank itself, or for banks 16 to 79, then the multiple of 16 below it, then its
+ * remainder by 16, the first that the program has; else the bank itself, in which the
+ * synthesizer plays the program's first preset. So an instrument can have groups of 16 banks,
+ * such as one per voice type (see voice-types.ts), and one without them plays the bank of the
+ * remainder.
+ */
+export function presetBank(banks: number[], bank: number) {
+	const tried = bank >= 16 && bank < 80 ? [bank, bank - (bank % 16), bank % 16] : [bank];
+	return tried.find((b) => banks.includes(b)) ?? bank;
+}
+
 /** A sample of a sound bank, decoded: its index in the bank's samples, and its data. */
 export type DecodedSample = { index: number; data: Float32Array };
 
@@ -120,6 +133,8 @@ export class Engine {
 	#events: ScoreEvent[] = [];
 	#notes: ScoreNote[] = [];
 	#banks = new Map<string, BasicSoundBank>();
+	/** Per channel, the bank that its last bank select asked for. */
+	#asked = new Map<number, number>();
 	/** Per channel, the gain it approaches and the gain it has. */
 	#gains = new Map<number, { target: number; gain: number }>();
 	#commands: PlayCommand[] = [];
@@ -191,11 +206,19 @@ export class Engine {
 	}
 
 	/**
-	 * Plays channel `ch` with `program`, in the bank that it has, whatever the score's events do.
+	 * Plays channel `ch` with `program`, in the bank that its last bank select asked for, or the
+	 * one that presetBank() falls back to, whatever the score's events do.
 	 */
 	#program(ch: number, program: number, bank?: number) {
 		const channel = this.#channel(ch);
-		if (bank !== undefined) channel.patch.bankMSB = bank;
+		if (bank !== undefined) this.#asked.set(ch, bank);
+		const asked = this.#asked.get(ch);
+		if (asked !== undefined) {
+			const banks = [...this.#banks.values()].flatMap((b) =>
+				b.presets.filter((p) => p.program === program).map((p) => p.bankMSB)
+			);
+			channel.patch.bankMSB = presetBank(banks, asked);
+		}
 		channel.setSystemParameter('presetLock', false);
 		this.synth.programChange(ch, program);
 		channel.setSystemParameter('presetLock', true);

@@ -2,9 +2,9 @@
 // contour to another instrument's: for scripts/spectrum.ts and the Match button.
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from './build.ts';
-import { ifft, keyFreq } from './dsp.ts';
+import { between, ifft, keyFreq } from './dsp.ts';
 import { CONTOUR_FREQS, CONTOUR_KEYS, MATCH_KEYS, type Patch } from './patch.ts';
-import { between, CONTOUR_OCTAVES } from './spectrum.ts';
+import { CONTOUR_OCTAVES } from './spectrum.ts';
 
 export const RATE = 32000,
 	N = 2 ** 15;

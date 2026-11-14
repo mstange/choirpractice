@@ -1,6 +1,6 @@
 // The vowel: a vocal tract's resonances, as a gain in dB against a neutral vowel's, per register.
 import { CONTOUR_KEYS, type Patch, type Vowel } from './patch.ts';
-import { between } from './spectrum.ts';
+import { between } from './dsp.ts';
 
 /** Formant frequencies and bandwidths in Hz, of five formants. */
 type Formants = { freq: number[]; bw: number[] };

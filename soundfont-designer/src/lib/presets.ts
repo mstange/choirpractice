@@ -52,7 +52,7 @@ const sung = (vowel: Patch['vowel']['vowel'], name: string) =>
 
 export const STARTING_POINTS: Patch[] = [
 	MS_BASIC_AAHS,
-	sung('i', 'Choir Eehs'),
+	sung('o', 'Choir Ohs'),
 	sung('u', 'Choir Uuus'),
 	d,
 	complete({

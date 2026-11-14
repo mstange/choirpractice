@@ -1,4 +1,5 @@
-// FFT, biquad filters and a seeded random number generator, for build.ts and the plots.
+// FFT, biquad filters, a seeded random number generator and interpolation, for build.ts and the
+// plots.
 import type { EqBand } from './patch.ts';
 
 /** Per FFT length n: cos and sin of 2πj/n, for j < n/2. */
@@ -122,6 +123,19 @@ export function random(seed: number) {
 		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
+}
+
+/**
+ * The two neighbours that `x` falls between on the increasing `points`, and the weight of the
+ * second; beyond the ends, the end.
+ */
+export function between(points: number[], x: number): [number, number, number] {
+	const last = points.length - 1;
+	if (last === 0 || x <= points[0]) return [0, 0, 0];
+	if (x >= points[last]) return [last, last, 0];
+	let i = 0;
+	while (x >= points[i + 1]) i++;
+	return [i, i + 1, (x - points[i]) / (points[i + 1] - points[i])];
 }
 
 export const keyFreq = (key: number) => 440 * 2 ** ((key - 69) / 12);

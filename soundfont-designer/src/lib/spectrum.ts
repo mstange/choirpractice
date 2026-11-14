@@ -1,20 +1,7 @@
 // The tone's spectrum, for build.ts and the plots.
-import { eqCurve } from './dsp.ts';
+import { between, eqCurve } from './dsp.ts';
 import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from './patch.ts';
 import { vowelCurve } from './vowel.ts';
-
-/**
- * The two neighbours that `x` falls between on the increasing `points`, and the weight of the
- * second; beyond the ends, the end.
- */
-export function between(points: number[], x: number): [number, number, number] {
-	const last = points.length - 1;
-	if (last === 0 || x <= points[0]) return [0, 0, 0];
-	if (x >= points[last]) return [last, last, 0];
-	let i = 0;
-	while (x >= points[i + 1]) i++;
-	return [i, i + 1, (x - points[i]) / (points[i + 1] - points[i])];
-}
 
 export const CONTOUR_OCTAVES = CONTOUR_FREQS.map(Math.log2);
 

@@ -58,17 +58,13 @@
 			ctx.lineTo(x(k * f0), h - 10);
 			ctx.stroke();
 		}
-		const curve = (gain: (f: number) => number, style: string, dash: number[] = [], lw = 1.5) => {
-			ctx.strokeStyle = style;
-			ctx.lineWidth = lw;
-			ctx.setLineDash(dash);
-			ctx.beginPath();
-			for (let px = 0; px <= w; px += 2) ctx.lineTo(px, y(gain(xLog(px, LO, HI, w)), h));
-			ctx.stroke();
-			ctx.setLineDash([]);
-			ctx.lineWidth = 1;
-		};
-		curve(eqCurve(patch.eq), '#5cc08a', [], 2);
+		const eq = eqCurve(patch.eq);
+		ctx.strokeStyle = '#5cc08a';
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		for (let px = 0; px <= w; px += 2) ctx.lineTo(px, y(eq(xLog(px, LO, HI, w)), h));
+		ctx.stroke();
+		ctx.lineWidth = 1;
 		patch.eq.forEach((b, i) => {
 			ctx.fillStyle = i === active ? '#f0b429' : '#5cc08a';
 			ctx.beginPath();

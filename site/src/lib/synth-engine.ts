@@ -78,10 +78,13 @@ interface Voice {
 	modLfoStartTime: number;
 	targetKey: number;
 	rootKey: number;
+	vibLfoPhase: number;
+	modLfoPhase: number;
 	modEnv: { init(voice: Voice): void };
 	modEnv2: { init(voice: Voice): void };
 	volEnv: { sampleTime: number };
 	wavetable: {
+		sampleData: Float32Array | undefined;
 		cursor: number;
 		end: number;
 		playbackStep: number;
@@ -93,8 +96,18 @@ interface Voice {
 	exclusiveRelease(currentTime: number): void;
 }
 
-/** A voice's gain going from `gain` to silence, or from silence to `gain`, in the legato. */
-type Fade = { voice: Voice; gain: number; start: number; seconds: number; out: boolean };
+/**
+ * A voice's gain going from `gain` to silence, or from silence to `gain`, in the legato: at equal
+ * power, or, between two voices that play the same, at equal gain.
+ */
+type Fade = {
+	voice: Voice;
+	gain: number;
+	start: number;
+	seconds: number;
+	out: boolean;
+	power: boolean;
+};
 
 /**
  * Plays a score with spessasynth_core, sample-exactly: each event happens on the first frame at
@@ -285,15 +298,34 @@ export class Engine {
 		if (!held.length) return synth.processMessage(data, offset);
 		const since = now - Math.min(...held.map((v) => v.startTime));
 		this.#fades = this.#fades.filter((f) => !held.includes(f.voice));
-		for (const v of held) {
-			v.releaseStartTime = Infinity;
-			this.#fades.push({ voice: v, gain: v.gainModifier, start: now, seconds: fade, out: true });
-		}
-		for (const v of this.#start(() => synth.processMessage(data, offset))) {
+		for (const v of held) v.releaseStartTime = Infinity;
+		const started = this.#start(() => synth.processMessage(data, offset));
+		// A voice that plays the sample of one that ends goes on from where that one is, so that the
+		// waveform carries on; at the same key, as on an instrument without vowels, the two play the
+		// same, which a crossfade at equal gain keeps as loud.
+		const twins = new Set<Voice>(),
+			fadeOf = (voice: Voice, out: boolean, power: boolean): Fade => ({
+				voice,
+				gain: voice.gainModifier,
+				start: now,
+				seconds: fade,
+				out,
+				power
+			});
+		for (const v of started) {
 			advance(v, since, this.#rate);
-			this.#fades.push({ voice: v, gain: v.gainModifier, start: now, seconds: fade, out: false });
+			const old = same(v, held);
+			if (old) {
+				v.wavetable.cursor = old.wavetable.cursor;
+				v.wavetable.hasLooped = old.wavetable.hasLooped;
+				v.vibLfoPhase = old.vibLfoPhase;
+				v.modLfoPhase = old.modLfoPhase;
+				if (data[1] === from) twins.add(old);
+			}
+			this.#fades.push(fadeOf(v, false, !(old && twins.has(old))));
 			v.gainModifier = 0;
 		}
+		for (const v of held) this.#fades.push(fadeOf(v, true, !twins.has(v)));
 	}
 
 	/** Calls `noteOn`, and returns the voices that it started. */
@@ -304,15 +336,13 @@ export class Engine {
 		return voices.filter((v) => v.isActive && !before.has(v));
 	}
 
-	/**
-	 * Moves the legato's gains on, at equal power, since the notes are at different pitches. A
-	 * voice that has faded out ends.
-	 */
+	/** Moves the legato's gains on. A voice that has faded out ends. */
 	#fade() {
 		const now = this.synth.currentTime;
 		this.#fades = this.#fades.filter((f) => {
-			const x = Math.min(1, (now - f.start) / f.seconds);
-			f.voice.gainModifier = f.gain * Math.sin(((f.out ? 1 - x : x) * Math.PI) / 2);
+			const x = Math.min(1, (now - f.start) / f.seconds),
+				y = f.out ? 1 - x : x;
+			f.voice.gainModifier = f.gain * (f.power ? Math.sin((y * Math.PI) / 2) : y);
 			if (x < 1) return true;
 			if (f.out) f.voice.exclusiveRelease(now);
 			return false;
@@ -342,6 +372,10 @@ export class Engine {
 		}
 	}
 }
+
+/** The voice of `voices` that plays the same sample as `v`, if any. */
+const same = (v: Voice, voices: Voice[]) =>
+	voices.find((o) => o.wavetable.sampleData === v.wavetable.sampleData);
 
 /**
  * Moves a voice that hasn't rendered yet `seconds` on: its envelopes, its LFOs and its place in

@@ -118,7 +118,6 @@
 		const { vowel, sung, measured } = $state.snapshot(patch.vowel) as Patch['vowel'];
 		return { vowel, sung, measured };
 	};
-	const sameFormants = (a: object, b: object) => JSON.stringify(a) === JSON.stringify(b);
 
 	async function importJson(e: Event & { currentTarget: HTMLInputElement }) {
 		const file = e.currentTarget.files?.[0];
@@ -386,8 +385,7 @@
 			<h2>Vowels of the lyrics</h2>
 			<p class="hint">
 				The choir app can sing each syllable of the lyrics on its own vowel. Give each vowel in the
-				list a sound with Keep. Vowels in yellow have the sound that is set up above right now, the
-				one that the keyboard plays.
+				list a sound with Keep.
 			</p>
 			<details class="hint">
 				<summary>How this works</summary>
@@ -428,17 +426,18 @@
 				vowel, as the exported file would. While this is on, the keyboard plays the sound set up above,
 				and every change takes longer to build, because each vowel is built.</label
 			>
+			<p>
+				Set up above, and played by the keyboard: <b
+					>{patch.vowel.vowel === 'sung' ? 'sung' : `button ${VOWEL_NAMES[patch.vowel.vowel]}`}</b
+				>. Keep stores it in a row.
+			</p>
 			<table class="vowels">
 				<tbody>
 					{#each LYRIC_VOWELS as v (v.ipa)}
 						{@const { from, formants } = vowelFormants(patch, v.ipa)}
 						{@const kept = patch.vowels[v.ipa]}
-						<tr class:edited={sameFormants(formants, editedFormants())}>
-							<td
-								title={sameFormants(formants, editedFormants())
-									? 'Has the sound that is set up above, which the keyboard plays'
-									: undefined}>{v.name}</td
-							>
+						<tr>
+							<td>{v.name}</td>
 							<td class="dim">/{v.ipa}/ {v.word}</td>
 							<td class:dim={!kept} class:kept>
 								{#if formants.vowel !== 'sung'}button {VOWEL_NAMES[formants.vowel]}
@@ -783,10 +782,6 @@
 		color: var(--dim);
 	}
 	.vowels .kept {
-		font-weight: bold;
-	}
-	.vowels tr.edited td:first-child {
-		color: var(--accent);
 		font-weight: bold;
 	}
 	footer {

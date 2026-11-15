@@ -4,12 +4,13 @@
 //
 // Usage: node scripts/choir/align.ts
 import { readFileSync, writeFileSync } from 'node:fs';
+import { vowelsOf } from '../../../site/src/lib/vowels.ts';
 import { SECTIONS, csd, notesPath, root } from './data.ts';
 
 const piece = JSON.parse(readFileSync(`${root}media/csd/locus-iste/piece.json`, 'utf8'));
 
 type ScoreNote = { t0: number; t1: number; p: number; s: number };
-type Syllable = { text: string; v?: string };
+type Syllable = { text: string; p?: string };
 
 const out: Record<string, unknown[]> = {};
 for (const [i, section] of SECTIONS.entries()) {
@@ -60,7 +61,7 @@ for (const [i, section] of SECTIONS.entries()) {
 			key: score[b].p,
 			off: Math.round((rec[a].midi - score[b].p) * 100),
 			text: syl.text,
-			v: syl.v ?? null,
+			v: vowelsOf(syl.p).join('') || null,
 			// Whether the note starts its syllable: the first note of a melisma has the consonant.
 			first: b === 0 || score[b - 1].s !== score[b].s
 		};

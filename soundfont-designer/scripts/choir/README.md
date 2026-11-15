@@ -1,13 +1,13 @@
 # Fitting a patch to a recorded choir
 
-These scripts fit a patch to the [Choral Singing Dataset](https://zenodo.org/records/1286570) (Cuesta et al., 2018): the Anton Bruckner Choir of Barcelona singing Bruckner's _Locus iste_, Guerrero's _Niño Dios_ and _El Rossinyol_, four singers per section, each on a close cardioid microphone. The four singers of a section sang together; the sections were recorded apart, to the same backing track. Mixing a section's four tracks gives a recording of that section in unison. The scripts use _Locus iste_, whose Latin `tools/vowels.py` reads. The **Recorded Choir** starting point in `src/lib/presets.ts` came from them.
+These scripts fit a patch to the [Choral Singing Dataset](https://zenodo.org/records/1286570) (Cuesta et al., 2018): the Anton Bruckner Choir of Barcelona singing Bruckner's _Locus iste_, Guerrero's _Niño Dios_ and _El Rossinyol_, four singers per section, each on a close cardioid microphone. The four singers of a section sang together; the sections were recorded apart, to the same backing track. Mixing a section's four tracks gives a recording of that section in unison. The scripts use _Locus iste_, whose Latin `tools/phonemes.py` reads. The **Recorded Choir** starting point in `src/lib/presets.ts` came from them.
 
 ## Data
 
 Not checked in; everything goes into `../.dev/choir/` (the repository's `.dev/`).
 
 - **The dataset:** version 5 ([record 2649950](https://zenodo.org/records/2649950), 1.1 GB), unpacked into `.dev/choir/csd5/`, or anywhere that `CSD` names. It has each singer's pitch track and the note annotations of each section, which the scripts need, under CC BY-NC 4.0. Its recordings are those of version 3 ([record 1286570](https://zenodo.org/records/1286570), CC BY 4.0) resampled from 48 to 44.1 kHz. Some soprano tracks are 64-bit floats.
-- **The score:** the MuseScore 3 file of _Locus iste_ linked from [CPDL](<https://www.cpdl.org/wiki/index.php/Locus_iste_(Anton_Bruckner)>), `https://www.cafe-puccini.dk/Bruckner/musescore/Locus_Iste.mscz`. Saved as MuseScore 4 with `mscore -o locus-iste.mscz Locus_Iste.mscz`, then built into `media/csd/locus-iste/` as a piece of a season `csd` whose `pieces.json` gives it `"languages": [["", "la"]]`. `tools/build.sh` stops in `engrave.py` on this score (`bass: segments differ from the score's`), after `extract.py`; running `extract.py` and `vowels.py` as `build.sh` does gives the `piece.json` that the scripts need.
+- **The score:** the MuseScore 3 file of _Locus iste_ linked from [CPDL](<https://www.cpdl.org/wiki/index.php/Locus_iste_(Anton_Bruckner)>), `https://www.cafe-puccini.dk/Bruckner/musescore/Locus_Iste.mscz`. Saved as MuseScore 4 with `mscore -o locus-iste.mscz Locus_Iste.mscz`, then built into `media/csd/locus-iste/` as a piece of a season `csd` whose `pieces.json` gives it `"languages": [["", "la"]]`. `tools/build.sh` stops in `engrave.py` on this score (`bass: segments differ from the score's`), after `extract.py`; running `extract.py` and `phonemes.py` as `build.sh` does gives the `piece.json` that the scripts need.
 
 ## Scripts
 

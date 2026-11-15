@@ -1,4 +1,4 @@
-// The vowels that the vocal parts sing, as `v` of piece.json's syllables (see tools/vowels.py).
+// The sounds that the vocal parts sing, as `p` of piece.json's syllables (see tools/phonemes.py).
 
 /**
  * An instrument that sings vowels has a preset for each, in the bank of its index here, of its
@@ -35,4 +35,21 @@ export function nearest(ipa: Ipa): Ipa[] {
 	for (let i = 0; i < order.length; i++)
 		for (const n of VOWELS[VOWEL_BANK.get(order[i])!].near) if (!order.includes(n)) order.push(n);
 	return order;
+}
+
+/** The glides that start a syllable, before its vowel, each with the vowel that it moves from. */
+export const GLIDES: Partial<Record<string, Ipa>> = { w: 'u', j: 'i', ɥ: 'y' };
+
+/** The other consonants of a syllable's phonemes, each one character: ʧ, ʤ, ʦ, ʣ are affricates. */
+export const CONSONANTS = 'pbtdkgfvθðszʃʒhmnŋɲlrʧʤʦʣ';
+
+/** The vowels of a syllable's phonemes: none, one, or a diphthong's two. */
+export const vowelsOf = (phonemes: string | undefined) =>
+	[...(phonemes ?? '')].filter((c): c is Ipa => VOWEL_BANK.has(c));
+
+/** The glide that a syllable's phonemes start their vowel with, as the vowel it moves from. */
+export function glideOf(phonemes: string | undefined): Ipa | undefined {
+	const chars = [...(phonemes ?? '')],
+		i = chars.findIndex((c) => VOWEL_BANK.has(c));
+	return i > 0 ? GLIDES[chars[i - 1]] : undefined;
 }

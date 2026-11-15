@@ -3,7 +3,7 @@
 // the next rather than starting anew.
 import type { ScoreEvent, ScoreNote } from './synth-engine.ts';
 import type { Part, Voice } from './types.ts';
-import { VOWEL_BANK } from './vowels.ts';
+import { VOWEL_BANK, vowelsOf } from './vowels.ts';
 
 /** Seconds in which a melisma's note crossfades into the next. */
 const LEGATO_FADE = 0.06;
@@ -74,17 +74,17 @@ export function sing(events: ScoreEvent[], notes: ScoreNote[], parts: Part[], vo
 			changed = true;
 		}
 
-		if (!voice.syllables.some((s) => s.v)) continue;
+		const vowels = voice.syllables.map((s) => vowelsOf(s.p));
+		if (!vowels.some((v) => v.length)) continue;
 		// The bank of each syllable's vowel at its first note, and of a diphthong's second vowel
 		// near the end of its last.
 		const banks: [t: number, bank: number][] = [];
 		voice.notes.forEach((n, i) => {
 			const note = midi[i],
-				v = voice.syllables[n.s].v;
+				v = vowels[n.s];
 			if (!note) return;
-			if (first(i))
-				banks.push([note.t0, VOWEL_BANK.get(typeof v === 'string' ? v : (v?.[0] ?? 'a'))!]);
-			if (!last(i) || !Array.isArray(v)) return;
+			if (first(i)) banks.push([note.t0, VOWEL_BANK.get(v[0] ?? 'a')!]);
+			if (!last(i) || v.length !== 2) return;
 			const t = note.t1 - Math.min(DIPHTHONG_END, DIPHTHONG_SHARE * (note.t1 - note.t0));
 			if (!ons.has(`${ch}:${note.key}:${note.t0}`)) return;
 			banks.push([t, VOWEL_BANK.get(v[1])!]);

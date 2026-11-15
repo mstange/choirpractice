@@ -1,5 +1,4 @@
 // The shape of piece.json, as written by tools/extract.py.
-import type { Ipa } from './vowels.ts';
 
 export interface Syllable {
 	t0: number;
@@ -8,10 +7,10 @@ export interface Syllable {
 	/** MusicXML syllabic: single, begin, middle, end. */
 	syl: 's' | 'b' | 'm' | 'e';
 	/**
-	 * The vowel sung (see vowels.ts), or a diphthong's two, if tools/vowels.py could tell; a
-	 * syllable without a vowel, such as a hummed "mm", has none.
+	 * The phonemes sung, one character each (see vowels.ts): its vowels, none, one or a
+	 * diphthong's two, and the consonants around them, if tools/phonemes.py could tell.
 	 */
-	v?: Ipa | [Ipa, Ipa];
+	p?: string;
 }
 
 export interface Note {

@@ -1,8 +1,9 @@
 // Patches to start from, as changes to the default patch.
 import { DEFAULT_PATCH, complete, type Patch, type Vowel } from './patch.ts';
-import { RECORDED_CHOIR_VOICES } from './recorded-choir.ts';
+import { RECORDED_CHOIR } from './recorded-choir.ts';
 
-const d = DEFAULT_PATCH;
+const d = DEFAULT_PATCH,
+	{ aperiodic, aperiodicTilt, ...fitted } = RECORDED_CHOIR;
 
 // What the page starts with: as near MS Basic's Choir Aahs as the parameters come, measured with
 // scripts/spectrum.ts: the vowel a at full strength, and the contour matched around it on every
@@ -62,127 +63,16 @@ export const STARTING_POINTS: Patch[] = [
 		selected: 'u'
 	}),
 	// MS Basic Aahs fitted to a recorded choir, the Choral Singing Dataset's Locus iste, with
-	// scripts/choir/ (see its README): the contour and the noise between the harmonics to the four
-	// sections' notes on "ah"; each other vowel's formants and bandwidths per register, and a contour
-	// of its own, to their notes on it (fit-vowels.ts); each voice type's vowels the same, to its
-	// section's notes (recorded-choir.ts); and the vibrato to that of the singers' mean pitch.
+	// scripts/choir/ (see its README), in recorded-choir.ts: the noise between the harmonics to the
+	// four sections' notes on "ah"; each vowel's formants and bandwidths per register, and a contour
+	// of its own, to their notes on it, with what the vowels' contours have in common in the patch's;
+	// each voice type's vowels the same, to its section's notes; and the vibrato to that of the
+	// singers' mean pitch.
 	complete({
 		...MS_BASIC_AAHS,
 		name: 'Recorded Choir',
-		tone: { ...MS_BASIC_AAHS.tone, aperiodic: [-4.3, -23.8, -43.3], aperiodicTilt: [8, 8, 8] },
-		vowels: {
-			ɛ: {
-				vowel: 'fitted',
-				sung: [1, 1, 1],
-				measured: [],
-				registers: [
-					{ freq: [374, 1444, 2251, 2450, 2750], bw: [399, 41, 151, 180, 195] },
-					{ freq: [555, 1568, 2428, 2900, 3250], bw: [83, 220, 255, 195, 210] },
-					{ freq: [663, 2032, 2817, 3900, 4950], bw: [42, 357, 281, 195, 210] }
-				],
-				contour: [
-					[
-						1.5, 1.5, 1.5, 1, 1, -0.5, -1.5, 0, 2, 3, 2, 4, -1, 2.5, 5, 8.5, 0, 6, -0.5, -8.5, -8.5,
-						-6.5, -4.5, -4.5, -4.5
-					],
-					[
-						2, 2, 2.5, 2.5, 3.5, 2.5, 3, 3.5, 2, 2, -3.5, 0.5, 1, -0.5, -0.5, -1, 1, 0, -1, -1.5,
-						-2.5, -3, -5, -4.5, -5
-					],
-					[
-						2.5, 2.5, 2.5, 2.5, 3, 3, 3, 3.5, 4, 6, 4.5, 1.5, 2.5, -0.5, -1, -4, -2.5, -2.5, -2,
-						-0.5, -1, -3, -5.5, -9, -8.5
-					]
-				]
-			},
-			ɔ: {
-				vowel: 'fitted',
-				sung: [1, 1, 1],
-				measured: [],
-				registers: [
-					{ freq: [541, 854, 2307, 2450, 2750], bw: [345, 206, 69, 180, 195] },
-					{ freq: [603, 936, 2716, 2900, 3250], bw: [120, 117, 308, 195, 210] },
-					{ freq: [618, 1201, 2973, 3900, 4950], bw: [133, 41, 388, 195, 210] }
-				],
-				contour: [
-					[
-						2, 2, 2, 1.5, 0, -0.5, 0, 0.5, 1.5, 2.5, 0.5, 1.5, 1.5, 2.5, 4, 2, -2, 2.5, 0.5, -5.5,
-						-5, -4, -3.5, -3, -3
-					],
-					[
-						1, 1, 1, 1, 0.5, 0.5, 2, 2, 1, 2.5, -2, -1.5, 0.5, 0.5, -2.5, -2.5, -3, 1, -0.5, -0.5,
-						1, -1, -0.5, -1, -1
-					],
-					[
-						1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0.5, 0, 2.5, 2, 0, -4, -4, -2, -2, -2.5, -0.5, 1, -0.5, 0,
-						0
-					]
-				]
-			},
-			i: {
-				vowel: 'fitted',
-				sung: [1, 1, 1],
-				measured: [],
-				registers: [
-					{ freq: [248, 1648, 2300, 2450, 2750], bw: [399, 79, 257, 180, 195] },
-					{ freq: [337, 1842, 2555, 2900, 3250], bw: [50, 274, 353, 195, 210] },
-					{ freq: [626, 2352, 2868, 3900, 4950], bw: [51, 318, 117, 195, 210] }
-				],
-				contour: [
-					[
-						-1, -1, -1, -1.5, -1, 1, 1, 1, 2, 2, -2, -0.5, -2.5, 2, 5, 4.5, 0, 4, 4.5, -3.5, -3,
-						-2.5, -2.5, -2.5, -2.5
-					],
-					[
-						0, 0, 0.5, 0.5, 1.5, 3.5, 3, 0, -1.5, 2, 0, 4, 0.5, -2.5, -3, 0, -0.5, 0.5, -2, 2, -0.5,
-						-1, -2.5, -2.5, -2.5
-					],
-					[
-						0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0, 0.5, 2, 2, 4, 4.5, 1.5, -1.5, -3, -1, -1.5, -3.5,
-						3.5, -1.5, -2.5, -2, -2, -2
-					]
-				]
-			},
-			u: {
-				vowel: 'fitted',
-				sung: [1, 1, 1],
-				measured: [],
-				registers: [
-					{ freq: [365, 867, 2318, 2450, 2750], bw: [399, 206, 107, 180, 195] },
-					{ freq: [405, 770, 2575, 2900, 3250], bw: [395, 208, 353, 195, 210] },
-					{ freq: [592, 999, 3074, 3900, 4950], bw: [339, 41, 388, 195, 210] }
-				],
-				contour: [
-					[
-						-1, -1, -1, -1, -2, -1.5, -1, 0.5, 0.5, -0.5, -4, -0.5, 2, 0, 2, 2, 4, 4.5, -0.5, -3,
-						-1.5, -0.5, 0.5, 1, 1
-					],
-					[
-						-1, -1, -1.5, -1.5, -1.5, -0.5, -0.5, 0.5, -1, 1, 0, -1, -0.5, 1.5, -3, -6.5, -2.5, 0.5,
-						-0.5, 3, 3.5, 3, 3.5, 3, 3
-					],
-					[
-						-1, -1, -1, -1, -1, -1, -1.5, -1.5, -2, 0, 1.5, 0.5, 0.5, 2.5, 2.5, -0.5, -1.5, 0.5,
-						-1.5, -2, 0, 2.5, 2.5, 2, 2
-					]
-				]
-			}
-		},
-		contour: [
-			[
-				-25.5, -25.5, -26, -26.5, -25, -18.5, -15, -13.5, -6.5, 0, -11, -29, -27.5, -24, -37.5,
-				-45.5, -37.5, -25.5, -9, -22.5, -19, -14.5, -15, -16.5, -17
-			],
-			[
-				-23.5, -24, -23.5, -24, -23, -19.5, -18, -16, -9, -1.5, -9.5, -23.5, -23, -12.5, -17.5, -32,
-				-37, -25, -13.5, -29, -35, -26.5, -25.5, -21.5, -21.5
-			],
-			[
-				-22, -21.5, -21, -20.5, -19.5, -18, -16.5, -15, -12.5, -9.5, -11, -18.5, -23.5, -14, -7.5,
-				-16, -32, -27.5, -22, -27, -35, -32, -31, -29.5, -29
-			]
-		],
-		voices: RECORDED_CHOIR_VOICES,
+		tone: { ...MS_BASIC_AAHS.tone, aperiodic, aperiodicTilt },
+		...fitted,
 		vibrato: { ...MS_BASIC_AAHS.vibrato, rate: 6, depth: 12 }
 	}),
 	d,

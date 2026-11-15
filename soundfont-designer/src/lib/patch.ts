@@ -20,8 +20,8 @@ export type VowelFormants = {
 	sung: number[];
 	measured: number[][];
 	/**
-	 * Per register of CONTOUR_KEYS, the five formants' frequencies and bandwidths in Hz, as fitted
-	 * to a recording: the bandwidths aren't scaled by the patch's formant width.
+	 * Per register of the patch's `registerKeys`, the five formants' frequencies and bandwidths in
+	 * Hz, as fitted to a recording: the bandwidths aren't scaled by the patch's formant width.
 	 */
 	registers?: Formants[];
 	/** dB added to the patch's contour while singing this vowel, per register at CONTOUR_FREQS. */
@@ -69,13 +69,12 @@ export interface Patch {
 		noiseLow: number;
 		noiseHigh: number;
 		/**
-		 * Noise between the harmonics, shaped like them: the noise between two neighbouring
-		 * harmonics, in dB against them, at 1 kHz on C4 (-90 is none), how much that changes per
-		 * octave of key, and per octave of frequency.
+		 * Noise between the harmonics, shaped like them, per register of `registerKeys`: the noise
+		 * between two neighbouring harmonics, in dB against them, at 1 kHz (-90 is none), and how
+		 * much that changes per octave of frequency.
 		 */
-		aperiodic: number;
-		aperiodicSlope: number;
-		aperiodicTilt: number;
+		aperiodic: number[];
+		aperiodicTilt: number[];
 	};
 	/**
 	 * How much of its vowel the tone has: the vowel's vocal tract's resonances against a neutral
@@ -105,7 +104,12 @@ export interface Patch {
 	/** Applied to both layers, at the same frequencies on every key. */
 	eq: EqBand[];
 	/**
-	 * dB added to the tone, harmonics and breath noise, per register of CONTOUR_KEYS at
+	 * The keys of the registers, in increasing order: the contour, the noise between the harmonics
+	 * and the fitted vowels have their settings at each, and in between on the keys between.
+	 */
+	registerKeys: number[];
+	/**
+	 * dB added to the tone, harmonics and breath noise, per register of `registerKeys` at
 	 * CONTOUR_FREQS: in between along the logarithm of the frequency, and from key to key in
 	 * between the registers.
 	 */
@@ -161,7 +165,7 @@ export const HARMONICS = 32;
 
 /** Third octaves from 50 Hz to 12.7 kHz. */
 export const CONTOUR_FREQS = Array.from({ length: 25 }, (_, i) => 50 * 2 ** (i / 3));
-/** The keys of the contour's registers: E2, A#3 and E5. */
+/** The keys of the registers of patches that don't say: E2, A#3 and E5. */
 export const CONTOUR_KEYS = [40, 58, 76];
 /**
  * The keys that Match fits the contour on, across the vocal parts' range: every third key, one in
@@ -184,9 +188,8 @@ export const DEFAULT_PATCH: Patch = {
 		noise: -32,
 		noiseLow: 1500,
 		noiseHigh: 7000,
-		aperiodic: -90,
-		aperiodicSlope: 0,
-		aperiodicTilt: 0
+		aperiodic: CONTOUR_KEYS.map(() => -90),
+		aperiodicTilt: CONTOUR_KEYS.map(() => 0)
 	},
 	vowel: { amount: 0.2, width: 1 },
 	vowels: {},
@@ -194,6 +197,7 @@ export const DEFAULT_PATCH: Patch = {
 	voice: null,
 	selected: 'a',
 	oneVowel: true,
+	registerKeys: CONTOUR_KEYS,
 	eq: [
 		{ type: 'lowshelf', freq: 150, gain: 0, q: 0.7 },
 		{ type: 'peak', freq: 800, gain: 0, q: 1 },
@@ -238,6 +242,22 @@ export function complete(p: Partial<Patch>): Patch {
 		const [low, high] = contour as number[][];
 		d.contour = [low, low.map((v, j) => (v + high[j]) / 2), high];
 	}
+	// Patches saved earlier had one noise level at C4, changing per octave of key, and one tilt.
+	const tone = d.tone as Omit<Patch['tone'], 'aperiodic' | 'aperiodicTilt'> & {
+		aperiodic: number | number[];
+		aperiodicTilt: number | number[];
+		aperiodicSlope?: number;
+	};
+	if (typeof tone.aperiodic === 'number') {
+		const level = tone.aperiodic,
+			slope = tone.aperiodicSlope ?? 0,
+			tilt = typeof tone.aperiodicTilt === 'number' ? tone.aperiodicTilt : 0;
+		tone.aperiodic = CONTOUR_KEYS.map((k) =>
+			level > -90 ? Math.round((level + (slope * (k - 60)) / 12) * 10) / 10 : -90
+		);
+		tone.aperiodicTilt = CONTOUR_KEYS.map(() => tilt);
+	}
+	delete tone.aperiodicSlope;
 	// Patches saved earlier had their formants as EQ peaks of a tenor's, which a third of the
 	// amount at half the width comes near.
 	if ('formant' in p) {

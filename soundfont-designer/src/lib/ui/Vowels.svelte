@@ -384,7 +384,7 @@
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
 						title={own?.vowel === 'fitted' && own.registers
-							? `Fitted: F1–F3 ${own.registers.map((r, g) => `${r.freq.slice(0, 3).join(', ')} Hz on ${['E2', 'A♯3', 'E5'][g]}`).join('; ')}${own.contour ? ', with a contour of its own' : ''}`
+							? `Fitted: F1–F3 ${own.registers.map((r, g) => `${r.freq.slice(0, 3).join(', ')} Hz on ${noteName(patch.registerKeys[g])}`).join('; ')}${own.contour ? ', with a contour of its own' : ''}`
 							: own?.measured.length
 								? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
 								: undefined}

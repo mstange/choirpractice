@@ -7,9 +7,9 @@
 // With --base, the patch to fit instead of MS Basic Aahs.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
-import { keyFreq } from '../../src/lib/dsp.ts';
-import { db, fitContour, measure, patchBank, type Harmonic } from '../../src/lib/measure.ts';
-import { CONTOUR_KEYS, complete } from '../../src/lib/patch.ts';
+import { keyFreq, keyWeights } from '../../src/lib/dsp.ts';
+import { db, fitContour, measure, patchBank, solve, type Harmonic } from '../../src/lib/measure.ts';
+import { complete } from '../../src/lib/patch.ts';
 import { MS_BASIC_AAHS } from '../../src/lib/presets.ts';
 import {
 	MIN_LEFT,
@@ -143,56 +143,64 @@ patch.selected = vowel as typeof patch.selected;
 const ours = measured(patchBank(patch), 0, 'patch'),
 	choirAahs = measured(aahs, 52, 'aahs');
 const vsAahs = fitContour(theirs, choirAahs, keys),
-	fit = fitContour(theirs, ours, keys);
+	fit = fitContour(theirs, ours, keys, patch.registerKeys);
 const raw = patch.contour.map((row, g) => row.map((v, j) => v + fit.change[g][j])),
 	top = Math.max(...raw.flat());
 patch.contour = raw.map((row) => row.map((v) => Math.max(-60, Math.round((v - top) * 2) / 2)));
 patch.name = `Choir (CSD) ${vowel}`;
-// The noise between the harmonics: the patch's aperiodic noise is linear in dB in the octaves of
-// key from C4 and of frequency from 1 kHz, so the change that brings the patch's noise against
-// its harmonics nearest the choir's is a linear regression of their difference, over the
-// harmonics up to 5 kHz within 40 dB of each key's strongest.
+// The noise between the harmonics: the patch's aperiodic noise has a level and a tilt per octave
+// of frequency from 1 kHz per register, and those of the registers on either side in between, so
+// the change that brings the patch's noise against its harmonics nearest the choir's is a linear
+// regression of their difference, over the harmonics up to 5 kHz within 40 dB of each key's
+// strongest, with a little of the change's own size, which holds a register without notes near it.
 {
 	const fitted = measured(patchBank(patch), 0, 'contour'),
-		rows: number[][] = [];
+		regs = patch.registerKeys,
+		m = 2 * regs.length,
+		rows: { terms: [number, number][]; e: number }[] = [];
 	keys.forEach((key, k) => {
-		const top = Math.max(...theirs[k].map((h) => h.level));
+		const top = Math.max(...theirs[k].map((h) => h.level)),
+			[a, b, t] = keyWeights(regs, key, true);
 		theirs[k].forEach((h, i) => {
 			const o = fitted[k][i],
-				f = (i + 1) * keyFreq(key);
+				f = (i + 1) * keyFreq(key),
+				x = Math.log2(f / 1000);
 			if (!o || f > 5000 || db(h.level / top) < -40) return;
-			rows.push([
-				1,
-				(key - 60) / 12,
-				Math.log2(f / 1000),
-				db(h.noise / h.level) - db(o.noise / o.level)
-			]);
+			rows.push({
+				terms: [
+					[2 * a, 1 - t],
+					[2 * a + 1, (1 - t) * x],
+					[2 * b, t],
+					[2 * b + 1, t * x]
+				],
+				e: db(h.noise / h.level) - db(o.noise / o.level)
+			});
 		});
 	});
-	// Normal equations of three unknowns.
-	const ata = [0, 1, 2].map((i) => [0, 1, 2].map((j) => rows.reduce((s, r) => s + r[i] * r[j], 0))),
-		atb = [0, 1, 2].map((i) => rows.reduce((s, r) => s + r[i] * r[3], 0));
-	const det = (m: number[][]) =>
-		m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
-		m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
-		m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-	const d = det(ata),
-		x = [0, 1, 2].map(
-			(c) => det(ata.map((row, r) => row.map((v, j) => (j === c ? atb[r] : v)))) / d
-		);
-	const rmsOf = (f: (r: number[]) => number) =>
+	const ata = Array.from({ length: m }, () => new Float64Array(m)),
+		atb = new Float64Array(m);
+	for (const { terms, e } of rows)
+		for (const [p, wp] of terms) {
+			atb[p] += wp * e;
+			for (const [q, wq] of terms) ata[p][q] += wp * wq;
+		}
+	for (let p = 0; p < m; p++) ata[p][p] += 0.1;
+	const x = solve(ata, atb);
+	const rmsOf = (f: (r: (typeof rows)[0]) => number) =>
 		Math.sqrt(rows.reduce((s, r) => s + f(r) ** 2, 0) / rows.length);
 	console.log(
-		`\nnoise against the harmonics, choir minus patch, over ${rows.length} harmonics: ${rmsOf((r) => r[3]).toFixed(1)} dB rms, ` +
-			`${rmsOf((r) => r[3] - x[0] - x[1] * r[1] - x[2] * r[2]).toFixed(1)} after the change: ` +
-			`aperiodic ${x[0] >= 0 ? '+' : ''}${x[0].toFixed(1)}, per octave of key ${x[1].toFixed(1)}, per octave of frequency ${x[2].toFixed(1)}`
+		`\nnoise against the harmonics, choir minus patch, over ${rows.length} harmonics: ${rmsOf((r) => r.e).toFixed(1)} dB rms, ` +
+			`${rmsOf((r) => r.e - r.terms.reduce((s, [p, w]) => s + w * x[p], 0)).toFixed(1)} after the change`
 	);
-	patch.tone.aperiodic = Math.round(patch.tone.aperiodic + x[0]);
-	patch.tone.aperiodicSlope = Math.round(patch.tone.aperiodicSlope + x[1]);
-	patch.tone.aperiodicTilt = Math.round(patch.tone.aperiodicTilt + x[2]);
-	console.log(
-		`  aperiodic ${patch.tone.aperiodic}, slope ${patch.tone.aperiodicSlope}, tilt ${patch.tone.aperiodicTilt}`
-	);
+	regs.forEach((key, g) => {
+		patch.tone.aperiodic[g] = Math.round((patch.tone.aperiodic[g] + x[2 * g]) * 10) / 10;
+		patch.tone.aperiodicTilt[g] =
+			Math.round((patch.tone.aperiodicTilt[g] + x[2 * g + 1]) * 10) / 10;
+		console.log(
+			`  on ${key}: aperiodic ${patch.tone.aperiodic[g]} dB (${x[2 * g] >= 0 ? '+' : ''}${x[2 * g].toFixed(1)}), ` +
+				`tilt ${patch.tone.aperiodicTilt[g]} dB per octave (${x[2 * g + 1] >= 0 ? '+' : ''}${x[2 * g + 1].toFixed(1)})`
+		);
+	});
 	const after = measured(patchBank(patch), 0, 'noise');
 	const again: number[] = [];
 	keys.forEach((key, k) => {
@@ -224,7 +232,7 @@ entries.forEach(([k], i) => {
 });
 console.log(
 	'\nfitted contour:\n' +
-		patch.contour.map((row, g) => `  at ${CONTOUR_KEYS[g]}: ${row.join(' ')}`).join('\n')
+		patch.contour.map((row, g) => `  at ${patch.registerKeys[g]}: ${row.join(' ')}`).join('\n')
 );
 // The choir's noise between harmonics, against the harmonics, per section, as the patch's
 // aperiodic noise is set: at about 1 kHz.
@@ -259,7 +267,8 @@ for (const h of [0, 1]) {
 	const f = fitContour(
 			halves[h],
 			split.map((i) => ours[i]),
-			splitKeys
+			splitKeys,
+			base.registerKeys
 		),
 		p = structuredClone(base);
 	p.contour = p.contour.map((row, g) => row.map((v, j) => v + f.change[g][j]));

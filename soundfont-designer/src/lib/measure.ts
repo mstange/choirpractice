@@ -98,7 +98,7 @@ export const measure = (bank: BasicSoundBank, program: number, key: number) =>
 	harmonics(spectrum(render(bank, program, key)), keyFreq(key));
 
 /** Solves `a x = b` by Gaussian elimination, in place. */
-function solve(a: Float64Array[], b: Float64Array) {
+export function solve(a: Float64Array[], b: Float64Array) {
 	const n = b.length;
 	for (let c = 0; c < n; c++) {
 		let p = c;
@@ -218,7 +218,8 @@ export function matchContour(reference: BasicSoundBank, program: number, patch: 
 	const fit = fitContour(
 		MATCH_KEYS.map((key) => measure(reference, program, key)),
 		MATCH_KEYS.map((key) => measure(ours, 0, key)),
-		MATCH_KEYS
+		MATCH_KEYS,
+		patch.registerKeys
 	);
 	const raw = patch.contour.map((row, g) => row.map((v, j) => v + fit.change[g][j])),
 		top = Math.max(...raw.flat());

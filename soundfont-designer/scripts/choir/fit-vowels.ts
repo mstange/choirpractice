@@ -1,5 +1,5 @@
 // Fits each vowel of a patch to the recorded choir's notes on it, by what the patch plays: per
-// register of CONTOUR_KEYS, F1 to F3 and their bandwidths, searched with the harmonics predicted
+// register of the patch's registerKeys, F1 to F3 and their bandwidths, searched with the harmonics predicted
 // from the patch's spectrum (predict.ts), and then, optionally, a contour of the vowel's own.
 // Tests each fit on the notes that it wasn't fitted on, and the final one by rendering.
 //
@@ -92,14 +92,15 @@ function search(start: Formants[], entries: Harmonic[][], keys: number[], base: 
 
 /** The fitted vowel, with its own contour if asked for, fitted to `entries`. */
 function fit(entries: Harmonic[][], keys: number[], base: VowelFormants): VowelFormants {
-	const start = registerFormants(base, patch.vowel.width);
+	const start = registerFormants(base, patch);
 	const { registers } = search(start, entries, keys, base);
 	const fitted: VowelFormants = { ...base, vowel: 'fitted', registers, contour: undefined };
 	if (!withContour) return fitted;
 	const { change } = fitContour(
 		entries,
 		keys.map((k) => predict(patch, k, fitted)),
-		keys
+		keys,
+		patch.registerKeys
 	);
 	return { ...fitted, contour: change.map((row) => row.map((v) => Math.round(v * 2) / 2)) };
 }
@@ -122,14 +123,30 @@ for (const vowel of vowels) {
 	// Fitted on every other note of each key with two or more, measured on the others.
 	const split = list.flatMap((e, i) => (e.halves[1].notes ? [i] : [])),
 		splitKeys = split.map((i) => keys[i]),
-		halves = [0, 1].map((h) => split.map((i) => harmonicsOf(list[i].halves[h])));
+		halves = [0, 1].map((h) => split.map((i) => harmonicsOf(list[i].halves[h]))),
+		heldOut: Record<string, number[]> = {};
 	for (const h of [0, 1]) {
 		const f = fit(halves[h], splitKeys, base);
 		console.log(
 			`  fitted on half ${h} (${split.length} keys): ${err(halves[h], splitKeys, f).toFixed(1)} dB on it, ` +
 				`${err(halves[1 - h], splitKeys, f).toFixed(1)} on the other half, where the patch is ${err(halves[1 - h], splitKeys, base).toFixed(1)}`
 		);
+		for (const s of new Set(split.map((i) => list[i].section))) {
+			const mine = split.flatMap((i, j) => (list[i].section === s ? [j] : []));
+			(heldOut[s] ??= []).push(
+				err(
+					mine.map((j) => halves[1 - h][j]),
+					mine.map((j) => splitKeys[j]),
+					f
+				)
+			);
+		}
 	}
+	console.log(
+		`  on the other half, per section (mean of the two halves): ${Object.entries(heldOut)
+			.map(([s, e]) => `${s} ${((e[0] + e[1]) / 2).toFixed(1)}`)
+			.join(', ')} dB`
+	);
 	console.log(
 		`  the two halves against each other: ${misfit(halves[0], halves[1]).rms.toFixed(1)} dB`
 	);
@@ -146,7 +163,7 @@ for (const vowel of vowels) {
 		`  fitted on all: predicted ${err(all, keys, base).toFixed(1)} → ${err(all, keys, f).toFixed(1)} dB, ` +
 			`rendered ${misfit(all, renderedBefore).rms.toFixed(1)} → ${misfit(all, renderedAfter).rms.toFixed(1)} dB`
 	);
-	const before0 = registerFormants(base, patch.vowel.width);
+	const before0 = registerFormants(base, patch);
 	f.registers!.forEach((r, g) =>
 		console.log(
 			`    register ${g}: F ${r.freq.slice(0, 3).join('/')} Hz (was ${before0[g].freq.slice(0, 3).map(Math.round).join('/')}), ` +

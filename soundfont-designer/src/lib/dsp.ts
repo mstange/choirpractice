@@ -138,4 +138,21 @@ export function between(points: number[], x: number): [number, number, number] {
 	return [i, i + 1, (x - points[i]) / (points[i + 1] - points[i])];
 }
 
+/**
+ * The row of `rows`, one per key of `keys`, at `key`: linear in between, and beyond the ends the
+ * end, or with `extend`, the line through the last two on that side.
+ */
+export function atKey(keys: number[], rows: number[][], key: number, extend = false): number[] {
+	const [a, b, t] = keyWeights(keys, key, extend);
+	return rows[a].map((v, j) => v + t * (rows[b][j] - v));
+}
+
+/** The two registers of `keys` that atKey() takes `key` from, and the weight of the second. */
+export function keyWeights(keys: number[], key: number, extend = false): [number, number, number] {
+	const last = keys.length - 1;
+	if (!extend || last === 0 || (key >= keys[0] && key <= keys[last])) return between(keys, key);
+	const [a, b] = key < keys[0] ? [0, 1] : [last - 1, last];
+	return [a, b, (key - keys[a]) / (keys[b] - keys[a])];
+}
+
 export const keyFreq = (key: number) => 440 * 2 ** ((key - 69) / 12);

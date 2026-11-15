@@ -7,7 +7,7 @@ import {
 	type Vowel,
 	type VowelFormants
 } from './patch.ts';
-import { between } from './dsp.ts';
+import { atKey, between } from './dsp.ts';
 import {
 	nearest,
 	VOWEL_BANK,
@@ -86,7 +86,7 @@ const TABLE: Record<string, Record<Vowel, [number[], number[]]>> = {
 	}
 };
 
-/** The voice of each register of CONTOUR_KEYS: E2, A#3 and E5. */
+/** The voice of the table at each of CONTOUR_KEYS: E2, A#3 and E5. */
 export const REGISTER_VOICES = ['bass', 'tenor', 'soprano'];
 
 export const VOWELS: Vowel[] = ['a', 'e', 'i', 'o', 'u'];
@@ -121,11 +121,12 @@ export function cascade({ freq, bw }: Formants, f: number) {
 }
 
 /**
- * The formants of `vowel` (or the neutral vowel) at `key`: between those of the registers on
- * either side along the logarithm of the frequency, with the bandwidths times `width`.
+ * The formants of `vowel` (or the neutral vowel) of the table at `key`: between those of its voices
+ * on either side along the logarithm of the frequency, with the bandwidths times `width`.
  */
 function formants(v: Vowel | 'neutral', key: number, width: number): Formants {
-	return between3(
+	return formantsAt(
+		CONTOUR_KEYS,
 		REGISTERS.map((r) => r[v]),
 		key,
 		width
@@ -133,11 +134,11 @@ function formants(v: Vowel | 'neutral', key: number, width: number): Formants {
 }
 
 /**
- * The formants at `key` of `registers`, one per register of CONTOUR_KEYS: between those on either
- * side along the logarithm of the frequency, with the bandwidths times `width`.
+ * The formants at `key` of `registers`, one per key of `keys`: between those on either side along
+ * the logarithm of the frequency, with the bandwidths times `width`.
  */
-function between3(registers: Formants[], key: number, width: number): Formants {
-	const [a, b, t] = between(CONTOUR_KEYS, key),
+function formantsAt(keys: number[], registers: Formants[], key: number, width: number): Formants {
+	const [a, b, t] = between(keys, key),
 		mix = (x: number, y: number) => x ** (1 - t) * y ** t,
 		fa = registers[a],
 		fb = registers[b];
@@ -153,15 +154,12 @@ function between3(registers: Formants[], key: number, width: number): Formants {
  * by the ratios of the user's vowel to their a, so that each register keeps its voice; the fitted
  * vowel has its own per register.
  */
-export function vowelCurve(
-	{ vowel, sung, registers }: VowelFormants,
-	{ amount, width }: Patch['vowel'],
-	key: number
-) {
+export function vowelCurve({ vowel, sung, registers }: VowelFormants, p: Patch, key: number) {
+	const { amount, width } = p.vowel;
 	if (amount === 0) return () => 0;
 	const fv =
 			vowel === 'fitted' && registers
-				? between3(registers, key, 1)
+				? formantsAt(p.registerKeys, registers, key, 1)
 				: formants(vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel, key, width),
 		fn = formants('neutral', key, width);
 	if (vowel === 'sung') fv.freq = fv.freq.map((f, i) => f * (sung[i] ?? 1));
@@ -169,22 +167,52 @@ export function vowelCurve(
 }
 
 /**
- * The formants of a vowel in each register of CONTOUR_KEYS, as vowelCurve() sings them, with the
- * patch's formant width.
+ * The formants of a vowel on each of `keys` (by default the patch's registers), as vowelCurve()
+ * sings them, with the patch's formant width.
  */
 export function registerFormants(
 	{ vowel, sung, registers }: VowelFormants,
-	width: number
+	p: Patch,
+	keys = p.registerKeys
 ): Formants[] {
-	if (vowel === 'fitted' && registers) return structuredClone(registers);
-	return REGISTERS.map((r) => {
-		const f = r[vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel];
-		return {
-			freq: f.freq.map((x, i) => (vowel === 'sung' ? x * (sung[i] ?? 1) : x)),
-			bw: f.bw.map((w) => w * width)
-		};
+	if (vowel === 'fitted' && registers)
+		return keys.map((k) => formantsAt(p.registerKeys, registers, k, 1));
+	return keys.map((k) => {
+		const f = formants(vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel, k, p.vowel.width);
+		if (vowel === 'sung') f.freq = f.freq.map((x, i) => x * (sung[i] ?? 1));
+		return f;
 	});
 }
+
+/**
+ * `p` with its registers at `keys`: its contour, its noise between the harmonics and its fitted
+ * vowels' formants and contours, of all voices and of each voice type, as they were on those keys.
+ */
+export function withRegisters(p: Patch, keys: number[]): Patch {
+	const q = structuredClone(p),
+		rows = (r: number[][]) => keys.map((k) => atKey(p.registerKeys, r, k)),
+		values = (v: number[]) => rows(v.map((x) => [x])).map(([x]) => Math.round(x * 10) / 10),
+		vowels = (set: Patch['vowels']) => {
+			for (const f of Object.values(set)) {
+				const r = f.registers;
+				if (r) f.registers = keys.map((k) => roundFormants(formantsAt(p.registerKeys, r, k, 1)));
+				if (f.contour) f.contour = rows(f.contour).map((r) => r.map(half));
+			}
+		};
+	q.registerKeys = [...keys];
+	q.contour = rows(p.contour).map((r) => r.map(half));
+	q.tone.aperiodic = values(p.tone.aperiodic);
+	q.tone.aperiodicTilt = values(p.tone.aperiodicTilt);
+	vowels(q.vowels);
+	for (const set of Object.values(q.voices)) vowels(set);
+	return q;
+}
+
+const half = (v: number) => Math.round(v * 2) / 2,
+	roundFormants = ({ freq, bw }: Formants) => ({
+		freq: freq.map(Math.round),
+		bw: bw.map(Math.round)
+	});
 
 /** What the samples of a vowel's formants depend on: not what a vowel of the table keeps. */
 export const formantsKey = ({ vowel, sung, registers, contour }: VowelFormants) =>

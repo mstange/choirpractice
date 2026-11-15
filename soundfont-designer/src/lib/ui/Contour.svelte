@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { keyFreq } from '../dsp.ts';
-	import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch } from '../patch.ts';
+	import { CONTOUR_FREQS, type Patch } from '../patch.ts';
 	import { contourCurve, NYQUIST } from '../spectrum.ts';
 	import { selectedFormants, vowelCurve } from '../vowel.ts';
 	import { logX, prepare, xLog } from './canvas.ts';
@@ -65,8 +65,9 @@
 			ctx.lineWidth = 1;
 		};
 		// The preview key's vowel and contour together, with its highest point at 0 dB.
-		const vowel = vowelCurve(selectedFormants(patch), patch.vowel, previewKey),
-			contour = contourCurve(patch.contour, previewKey),
+		const keys = patch.registerKeys,
+			vowel = vowelCurve(selectedFormants(patch), patch, previewKey),
+			contour = contourCurve(keys, patch.contour, previewKey),
 			both = (f: number) => vowel(f) + contour(f),
 			top = Math.max(
 				...Array.from({ length: 200 }, (_, i) => both(xLog(i * (w / 199), LO, HI, w)))
@@ -74,11 +75,11 @@
 		curve((f) => both(f) - top, '#b88cf0', 1.5);
 		// The other registers dim, the preview key's contour between them dashed, and the one that
 		// is drawn on with its points.
-		CONTOUR_KEYS.forEach((key, g) => {
-			if (g !== register) curve(contourCurve(patch.contour, key), '#60d0e055', 1.5);
+		keys.forEach((key, g) => {
+			if (g !== register) curve(contourCurve(keys, patch.contour, key), '#60d0e055', 1.5);
 		});
-		curve(contourCurve(patch.contour, previewKey), '#fff8', 1, [4, 3]);
-		curve(contourCurve(patch.contour, CONTOUR_KEYS[register]), '#60d0e0', 2);
+		curve(contourCurve(keys, patch.contour, previewKey), '#fff8', 1, [4, 3]);
+		curve(contourCurve(keys, patch.contour, keys[register]), '#60d0e0', 2);
 		ctx.fillStyle = '#60d0e0';
 		for (const [j, f] of CONTOUR_FREQS.entries()) {
 			ctx.beginPath();

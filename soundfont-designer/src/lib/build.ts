@@ -15,7 +15,7 @@ import {
 	type BasicZone,
 	type ModulatorCurveType
 } from 'spessasynth_core';
-import { eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
+import { atKey, eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
 import { type Patch, type VowelFormants } from './patch.ts';
 import { formantsKey, vowelSet } from './vowel.ts';
 import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
@@ -93,20 +93,26 @@ export function toneSample(p: Patch, key: number, side: 0 | 1 = 0, formants?: Vo
 		}
 		for (const [k, pk] of power) add(k, Math.sqrt(pk));
 	});
-	const { aperiodic, aperiodicSlope, aperiodicTilt } = p.tone;
-	if (aperiodic > -90) {
+	const [level, tilt] = atKey(
+		p.registerKeys,
+		p.tone.aperiodic.map((v, g) => [v, p.tone.aperiodicTilt[g]]),
+		key,
+		true
+	);
+	if (level > -90) {
+		// The level and tilt of the registers on either side, and beyond the end registers on the
+		// line through the last two, as the noise changes along the key.
 		// Between neighbouring harmonics, from half the fundamental to half a harmonic above the
 		// top one, noise whose power in all is 10^(level/10) times theirs, along the logarithm of
 		// their power, tilted by frequency; below the fundamental, the fundamental's.
-		const level = aperiodic + (aperiodicSlope * (key - 60)) / 12,
-			perBin = (10 ** (level / 10) * bin) / f,
+		const perBin = (10 ** (level / 10) * bin) / f,
 			db = harmonics.map((h) => 20 * Math.log10(h.amp));
 		const top = Math.min(n / 2, Math.round((harmonics.length + 0.5) * (f / bin)));
 		for (let k = Math.round(f / 2 / bin); k < top; k++) {
 			const x = Math.max(0, (k * bin) / f - 1),
 				i = Math.min(db.length - 1, Math.floor(x)),
 				d = db[i] + (x - i) * ((db[i + 1] ?? db[i]) - db[i]);
-			add(k, Math.sqrt(perBin * 10 ** ((d + aperiodicTilt * Math.log2((k * bin) / 1000)) / 10)));
+			add(k, Math.sqrt(perBin * 10 ** ((d + tilt * Math.log2((k * bin) / 1000)) / 10)));
 		}
 	}
 	if (noise > -90) {
@@ -326,6 +332,7 @@ export function buildBank(
 			p.vowel,
 			formantsKey(formants),
 			p.eq,
+			p.registerKeys,
 			p.contour,
 			p.filter,
 			sampleRate,

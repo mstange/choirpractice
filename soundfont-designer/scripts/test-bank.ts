@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasynth_core';
 import { buildBank } from '../src/lib/build.ts';
+import { atKey } from '../src/lib/dsp.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
 import { DEFAULT_PATCH, EDITING_BANK, MATCH_KEYS, complete, type Patch } from '../src/lib/patch.ts';
 import { Engine } from '../../site/src/lib/synth-engine.ts';
@@ -175,29 +176,38 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 	}
 }
 
-// The aperiodic noise lies between the harmonics at its level against them, set by the key and
-// the frequency: measured in half a harmonic's spacing, 3 dB below it, against the mean in dB of
-// the harmonics on either side.
+// The aperiodic noise lies between the harmonics at its level against them, set per register,
+// in between on the keys between and on the line through the last two beyond the top one, and
+// by the frequency: measured in half a harmonic's spacing, 3 dB below it, against the mean in dB
+// of the harmonics on either side.
 {
 	const tone = {
 		...DEFAULT_PATCH.tone,
 		noise: -90,
-		aperiodic: -20,
-		aperiodicSlope: -6,
-		aperiodicTilt: 6
+		aperiodic: [-10, -20, -26],
+		aperiodicTilt: [6, 4, 2]
 	};
 	const noisy = patchBank(complete({ ...DEFAULT_PATCH, tone })),
 		db = (p: number) => 10 * Math.log10(p);
-	for (const key of [48, 72]) {
+	for (const key of [48, 72, 82]) {
 		const hs = measure(noisy, 0, key),
-			f0 = 440 * 2 ** ((key - 69) / 12);
+			f0 = 440 * 2 ** ((key - 69) / 12),
+			[level, tilt] = atKey(
+				DEFAULT_PATCH.registerKeys,
+				tone.aperiodic.map((v, g) => [v, tone.aperiodicTilt[g]]),
+				key,
+				true
+			);
 		const errors = hs.slice(0, 8).map((h, i) => {
 			const between = (db(h.level) + db(hs[i + 1].level)) / 2,
-				want = -23 - (6 * (key - 60)) / 12 + 6 * Math.log2(((i + 1.5) * f0) / 1000);
+				want = level - 3 + tilt * Math.log2(((i + 1.5) * f0) / 1000);
 			return Math.abs(db(h.noise) - between - want);
 		});
 		const error = Math.max(...errors);
-		check(error < 1, `key ${key}: aperiodic noise at its level (within ${error.toFixed(1)} dB)`);
+		check(
+			error < 1,
+			`key ${key}: aperiodic noise at its level, ${level.toFixed(1)} dB (within ${error.toFixed(1)} dB)`
+		);
 	}
 }
 

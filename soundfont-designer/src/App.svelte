@@ -2,14 +2,7 @@
 	import { Builder } from './lib/builder.svelte.ts';
 	import { DESIGNED, INSTRUMENTS, type DesignerSynth } from './lib/designer-synth.ts';
 	import { match } from './lib/matcher.ts';
-	import {
-		CONTOUR_FREQS,
-		CONTOUR_KEYS,
-		MATCH_KEYS,
-		complete,
-		type EqType,
-		type Patch
-	} from './lib/patch.ts';
+	import { CONTOUR_FREQS, MATCH_KEYS, complete, type EqType, type Patch } from './lib/patch.ts';
 	import { MS_BASIC_AAHS, STARTING_POINTS } from './lib/presets.ts';
 	import Contour from './lib/ui/Contour.svelte';
 	import Harmonics from './lib/ui/Harmonics.svelte';
@@ -78,8 +71,9 @@
 		}
 	}
 
-	/** The register of the contour that is drawn on. */
+	/** The register whose contour is drawn on and whose noise the sliders set. */
 	let contourRegister = $state(0);
+	const register = $derived(Math.min(contourRegister, patch.registerKeys.length - 1));
 	const NOTE_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
 	const noteName = (key: number) => `${NOTE_NAMES[key % 12]}${Math.floor(key / 12) - 1}`;
 	/** The instrument that Match measures, and what the last match did. */
@@ -240,28 +234,20 @@
 				unit="Hz"
 			/>
 			<Slider
-				label="Aperiodic"
-				bind:value={patch.tone.aperiodic}
+				label="Aperiodic on {noteName(patch.registerKeys[register])}"
+				bind:value={patch.tone.aperiodic[register]}
 				min={-90}
 				max={0}
 				unit="dB"
-				title="Noise between the harmonics, shaped like them: between two neighbours, against them, at 1 kHz on C4; -90 is off"
+				title="Noise between the harmonics, shaped like them: between two neighbours, against them, at 1 kHz, on the register selected under the contour, and in between on the keys between; -90 is off"
 			/>
 			<Slider
-				label="Aperiodic slope"
-				bind:value={patch.tone.aperiodicSlope}
-				min={-24}
-				max={12}
-				unit="dB/oct"
-				title="How much the aperiodic noise changes per octave of key"
-			/>
-			<Slider
-				label="Aperiodic tilt"
-				bind:value={patch.tone.aperiodicTilt}
+				label="Aperiodic tilt on {noteName(patch.registerKeys[register])}"
+				bind:value={patch.tone.aperiodicTilt[register]}
 				min={-12}
 				max={12}
 				unit="dB/oct"
-				title="How much the aperiodic noise changes against the harmonics per octave of frequency, from 1 kHz"
+				title="How much the aperiodic noise changes against the harmonics per octave of frequency, from 1 kHz, on the register selected under the contour"
 			/>
 		</section>
 
@@ -296,21 +282,22 @@
 
 		<section>
 			<h2>Tone: spectral contour</h2>
-			<Contour {patch} {previewKey} register={contourRegister} />
+			<Contour {patch} {previewKey} {register} />
 			<p class="hint">
 				The contour (blue) raises and lowers the tone, harmonics and breath noise, at fixed
 				frequencies: it is the timbre that isn't the vowel, and every vowel shares it. Purple is the
-				contour with the selected vowel (see Vowels) on the preview key. There is one for E2, A#3
-				and E5, and the keys in between mix their neighbours: draw on any; the dashed line is the
-				preview key's. Match measures the sustain of an instrument and of this patch at mf, on every
-				third key from E2 to G5, and sets the contour that brings this patch's harmonics nearest the
-				instrument's, singing the selected vowel. Select the vowel that the instrument sings before
-				matching; then the other vowels keep the rest of its timbre.
+				contour with the selected vowel (see Vowels) on the preview key. There is one per register,
+				and the keys in between mix their neighbours: draw on any; the dashed line is the preview
+				key's. The selected register is also the one whose aperiodic noise the Tone sliders set.
+				Match measures the sustain of an instrument and of this patch at mf, on every third key from
+				E2 to G5, and sets the contour that brings this patch's harmonics nearest the instrument's,
+				singing the selected vowel. Select the vowel that the instrument sings before matching; then
+				the other vowels keep the rest of its timbre.
 			</p>
 			<div class="buttons">
 				Draw
-				{#each CONTOUR_KEYS as key, g (key)}
-					<button class:on={contourRegister === g} onclick={() => (contourRegister = g)}
+				{#each patch.registerKeys as key, g (key)}
+					<button class:on={register === g} onclick={() => (contourRegister = g)}
 						>{noteName(key)}</button
 					>
 				{/each}
@@ -326,7 +313,7 @@
 				>
 				<button
 					onclick={() =>
-						(patch.contour = CONTOUR_KEYS.map(() => Array(CONTOUR_FREQS.length).fill(0)))}
+						(patch.contour = patch.registerKeys.map(() => Array(CONTOUR_FREQS.length).fill(0)))}
 					>Flat</button
 				>
 			</div>

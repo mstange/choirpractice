@@ -1,17 +1,16 @@
 // The tone's spectrum, for build.ts and the plots.
-import { between, eqCurve } from './dsp.ts';
-import { CONTOUR_FREQS, CONTOUR_KEYS, type Patch, type VowelFormants } from './patch.ts';
+import { atKey, between, eqCurve } from './dsp.ts';
+import { CONTOUR_FREQS, type Patch, type VowelFormants } from './patch.ts';
 import { selectedFormants, vowelCurve } from './vowel.ts';
 
 export const CONTOUR_OCTAVES = CONTOUR_FREQS.map(Math.log2);
 
 /**
- * The contour of `key`, between those of the registers on either side, and its gain in dB at `f`,
- * in between its frequencies along the logarithm of the frequency.
+ * The contour of `key`, between those of the registers on either side, one per key of `keys`, and
+ * its gain in dB at `f`, in between its frequencies along the logarithm of the frequency.
  */
-export function contourCurve(contour: number[][], key: number) {
-	const [a, b, t] = between(CONTOUR_KEYS, key),
-		row = contour[a].map((v, j) => v + t * (contour[b][j] - v));
+export function contourCurve(keys: number[], contour: number[][], key: number) {
+	const row = atKey(keys, contour, key);
 	return (f: number) => {
 		const [i, k, u] = between(CONTOUR_OCTAVES, Math.log2(f));
 		return row[i] + u * (row[k] - row[i]);
@@ -25,9 +24,9 @@ export function contourCurve(contour: number[][], key: number) {
  */
 export function toneEq(p: Patch, key: number, formants: VowelFormants = selectedFormants(p)) {
 	const eq = eqCurve(p.eq),
-		vowel = vowelCurve(formants, p.vowel, key),
-		contour = contourCurve(p.contour, key),
-		own = formants.contour ? contourCurve(formants.contour, key) : () => 0;
+		vowel = vowelCurve(formants, p, key),
+		contour = contourCurve(p.registerKeys, p.contour, key),
+		own = formants.contour ? contourCurve(p.registerKeys, formants.contour, key) : () => 0;
 	return (f: number) => eq(f) + vowel(f) + contour(f) + own(f);
 }
 

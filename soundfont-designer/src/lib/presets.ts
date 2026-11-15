@@ -19,9 +19,8 @@ export const MS_BASIC_AAHS = complete({
 		fundamentalDetune: 30,
 		width: 100,
 		noise: -90,
-		aperiodic: -28,
-		aperiodicSlope: -11,
-		aperiodicTilt: 7
+		aperiodic: [-9.7, -26.2, -42.7],
+		aperiodicTilt: [7, 7, 7]
 	},
 	vowel: { ...d.vowel, amount: 1, width: 1.5 },
 	contour: [
@@ -70,7 +69,7 @@ export const STARTING_POINTS: Patch[] = [
 	complete({
 		...MS_BASIC_AAHS,
 		name: 'Recorded Choir',
-		tone: { ...MS_BASIC_AAHS.tone, aperiodic: -26, aperiodicSlope: -13, aperiodicTilt: 8 },
+		tone: { ...MS_BASIC_AAHS.tone, aperiodic: [-4.3, -23.8, -43.3], aperiodicTilt: [8, 8, 8] },
 		vowels: {
 			ɛ: {
 				vowel: 'fitted',

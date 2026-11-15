@@ -4,6 +4,7 @@ import {
 	EDITING_BANK,
 	type Formants,
 	type Patch,
+	type SungFormants,
 	type Vowel,
 	type VowelFormants
 } from './patch.ts';
@@ -149,39 +150,61 @@ function formantsAt(keys: number[], registers: Formants[], key: number, width: n
 }
 
 /**
+ * Semitones beyond the notes that a voice type's own vowel was fitted to over which it fades into
+ * the vowel for all voices: the fit says nothing about the keys beyond them.
+ */
+export const VOICE_FADE = 5;
+
+/**
+ * How much of a voice type's own vowel `f` sings on `key`, against the vowel for all voices that
+ * it fades into: 1 on the keys of the notes that it was fitted to, 0 from VOICE_FADE beyond.
+ */
+export function ownWeight(f: SungFormants, key: number) {
+	if (!f.into || !f.range) return 1;
+	const [lo, hi] = f.range,
+		beyond = Math.max(lo - key, key - hi, 0);
+	return Math.max(0, 1 - beyond / VOICE_FADE);
+}
+
+/** The formants that a vowel sings on `key`, before a voice type's fade. */
+function keyFormants({ vowel, sung, registers }: VowelFormants, p: Patch, key: number) {
+	if (vowel === 'fitted' && registers) return formantsAt(p.registerKeys, registers, key, 1);
+	const f = formants(vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel, key, p.vowel.width);
+	if (vowel === 'sung') f.freq = f.freq.map((x, i) => x * (sung[i] ?? 1));
+	return f;
+}
+
+/**
  * The vowel's gain in dB at `key` as a function of frequency: its vocal tract's against a neutral
  * one's of the same voice, times the amount. The sung vowel has the formants of a, F1 to F3 moved
  * by the ratios of the user's vowel to their a, so that each register keeps its voice; the fitted
- * vowel has its own per register.
+ * vowel has its own per register. A voice type's own vowel beyond the notes that it was fitted to
+ * has formants between its own and those of the vowel for all voices, along the logarithm of the
+ * frequency.
  */
-export function vowelCurve({ vowel, sung, registers }: VowelFormants, p: Patch, key: number) {
+export function vowelCurve(f: SungFormants, p: Patch, key: number) {
 	const { amount, width } = p.vowel;
 	if (amount === 0) return () => 0;
-	const fv =
-			vowel === 'fitted' && registers
-				? formantsAt(p.registerKeys, registers, key, 1)
-				: formants(vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel, key, width),
-		fn = formants('neutral', key, width);
-	if (vowel === 'sung') fv.freq = fv.freq.map((f, i) => f * (sung[i] ?? 1));
-	return (f: number) => amount * 20 * Math.log10(cascade(fv, f) / cascade(fn, f));
+	const w = ownWeight(f, key);
+	let fv = keyFormants(f, p, key);
+	if (w < 1) {
+		const other = keyFormants(f.into!, p, key),
+			mix = (x: number, y: number) => x ** w * y ** (1 - w);
+		fv = {
+			freq: fv.freq.map((x, i) => mix(x, other.freq[i])),
+			bw: fv.bw.map((x, i) => mix(x, other.bw[i]))
+		};
+	}
+	const fn = formants('neutral', key, width);
+	return (x: number) => amount * 20 * Math.log10(cascade(fv, x) / cascade(fn, x));
 }
 
 /**
  * The formants of a vowel on each of `keys` (by default the patch's registers), as vowelCurve()
  * sings them, with the patch's formant width.
  */
-export function registerFormants(
-	{ vowel, sung, registers }: VowelFormants,
-	p: Patch,
-	keys = p.registerKeys
-): Formants[] {
-	if (vowel === 'fitted' && registers)
-		return keys.map((k) => formantsAt(p.registerKeys, registers, k, 1));
-	return keys.map((k) => {
-		const f = formants(vowel === 'sung' || vowel === 'fitted' ? 'a' : vowel, k, p.vowel.width);
-		if (vowel === 'sung') f.freq = f.freq.map((x, i) => x * (sung[i] ?? 1));
-		return f;
-	});
+export function registerFormants(f: VowelFormants, p: Patch, keys = p.registerKeys): Formants[] {
+	return keys.map((k) => keyFormants(f, p, k));
 }
 
 /**
@@ -215,10 +238,11 @@ const half = (v: number) => Math.round(v * 2) / 2,
 	});
 
 /** What the samples of a vowel's formants depend on: not what a vowel of the table keeps. */
-export const formantsKey = ({ vowel, sung, registers, contour }: VowelFormants) =>
+export const formantsKey = (f: SungFormants): string =>
 	JSON.stringify([
-		vowel === 'sung' ? sung : vowel === 'fitted' ? registers : vowel,
-		contour ?? null
+		f.vowel === 'sung' ? f.sung : f.vowel === 'fitted' ? f.registers : f.vowel,
+		f.contour ?? null,
+		f.into && f.range ? [f.range, formantsKey(f.into)] : null
 	]);
 
 /** The vowel of the table that a sung vowel's ratios come nearest, as a tenor's, by F1 and F2. */
@@ -244,13 +268,15 @@ export function vowelFormants(
 	p: Patch,
 	ipa: Ipa,
 	voice: VoiceType | null = p.voice
-): { from: Ipa; formants: VowelFormants } {
+): { from: Ipa; formants: SungFormants } {
 	const own = voice ? p.voices[voice] : undefined,
-		from = nearest(ipa).find((v) => own?.[v] || p.vowels[v] || TABLE_VOWELS[v])!;
+		from = nearest(ipa).find((v) => own?.[v] || p.vowels[v] || TABLE_VOWELS[v])!,
+		mine = own?.[from];
 	return {
 		from,
-		formants: own?.[from] ??
-			p.vowels[from] ?? { vowel: TABLE_VOWELS[from]!, sung: [1, 1, 1], measured: [] }
+		formants: mine
+			? { ...mine, into: vowelFormants(p, from, null).formants }
+			: (p.vowels[from] ?? { vowel: TABLE_VOWELS[from]!, sung: [1, 1, 1], measured: [] })
 	};
 }
 
@@ -265,7 +291,7 @@ export const ownVoices = (p: Patch) =>
 export const sungAh = (p: Patch): number[] | undefined => p.vowels.a?.measured[0];
 
 /** A preset of the patch: its bank, its vowel's name, and the formants and their vowel's name. */
-type VowelPreset = { bank: number; name: string; formants: VowelFormants; from: string };
+type VowelPreset = { bank: number; name: string; formants: SungFormants; from: string };
 
 /**
  * The presets of a patch: with `set` false, one at bank 0 with the selected vowel of the voice

@@ -16,7 +16,7 @@ import {
 	type ModulatorCurveType
 } from 'spessasynth_core';
 import { atKey, eqCurve, filter, ifft, keyFreq, random } from './dsp.ts';
-import { type Patch, type VowelFormants } from './patch.ts';
+import { type Patch, type SungFormants } from './patch.ts';
 import { formantsKey, vowelSet } from './vowel.ts';
 import { lowpass, noiseShape, NYQUIST, toneEq, toneHarmonics } from './spectrum.ts';
 
@@ -57,7 +57,7 @@ export function zones(spacing: number): Zone[] {
  * noise. A partial without copies is in both, a quarter period apart: then the sides add up in
  * power, like unrelated signals, at any pan and in mono.
  */
-export function toneSample(p: Patch, key: number, side: 0 | 1 = 0, formants?: VowelFormants) {
+export function toneSample(p: Patch, key: number, side: 0 | 1 = 0, formants?: SungFormants) {
 	const sr = p.output.sampleRate,
 		n = 2 ** Math.round(Math.log2(p.output.loop * sr)),
 		bin = sr / n;
@@ -323,7 +323,7 @@ export function buildBank(
 	const { env, onset, vibrato, tremolo } = p;
 
 	/** The tone's instrument, singing with `formants`. */
-	const toneInstrument = (formants: VowelFormants, name: string) => {
+	const toneInstrument = (formants: SungFormants, name: string) => {
 		const tone = new BasicInstrument();
 		tone.name = `${p.name}: Tone${name ? ` ${name}` : ''}`;
 		// What the samples depend on: not the levels, which the zones' attenuation sets.

@@ -10,7 +10,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank } from 'spessasynth_core';
 import { fitContour, measure, patchBank, type Harmonic } from '../../src/lib/measure.ts';
-import { complete, type Formants, type Patch, type VowelFormants } from '../../src/lib/patch.ts';
+import {
+	complete,
+	type Formants,
+	type Patch,
+	type SungFormants,
+	type VowelFormants
+} from '../../src/lib/patch.ts';
 import { STARTING_POINTS } from '../../src/lib/presets.ts';
 import { registerFormants, selectedFormants } from '../../src/lib/vowel.ts';
 import { choirHarmonics, harmonicsOf, type KeyHarmonics } from './data.ts';
@@ -91,10 +97,17 @@ function search(start: Formants[], entries: Harmonic[][], keys: number[], base: 
 }
 
 /** The fitted vowel, with its own contour if asked for, fitted to `entries`. */
-function fit(entries: Harmonic[][], keys: number[], base: VowelFormants): VowelFormants {
+function fit(entries: Harmonic[][], keys: number[], base: SungFormants): SungFormants {
 	const start = registerFormants(base, patch);
 	const { registers } = search(start, entries, keys, base);
-	const fitted: VowelFormants = { ...base, vowel: 'fitted', registers, contour: undefined };
+	// A voice type's own vowel keeps the keys that it was fitted on, beyond which it fades.
+	const fitted: SungFormants = {
+		...base,
+		vowel: 'fitted',
+		registers,
+		contour: undefined,
+		range: voice ? [Math.min(...keys), Math.max(...keys)] : undefined
+	};
 	if (!withContour) return fitted;
 	const { change } = fitContour(
 		entries,
@@ -155,8 +168,10 @@ for (const vowel of vowels) {
 	const f = fit(all, keys, base),
 		before = patchBank(patch),
 		renderedBefore = keys.map((k) => measure(before, 0, k));
-	if (voice) (patch.voices[voice] ??= {})[vowel as Patch['selected']] = f;
-	else patch.vowels[vowel as Patch['selected']] = f;
+	// What it fades into comes with it from the patch, rather than being kept.
+	const { into: _, ...kept } = f;
+	if (voice) (patch.voices[voice] ??= {})[vowel as Patch['selected']] = kept;
+	else patch.vowels[vowel as Patch['selected']] = kept;
 	const after = patchBank(patch),
 		renderedAfter = keys.map((k) => measure(after, 0, k));
 	console.log(

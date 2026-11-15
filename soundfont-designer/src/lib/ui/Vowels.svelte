@@ -5,7 +5,7 @@
 	import { BANDS, bandFreq, LOWEST, NEED, STRETCH } from '../sung.ts';
 	import type { Assessment, SungReply, SungRequest } from '../sung-worker.ts';
 	import { detectPitch } from '../../../../site/src/lib/pitch.ts';
-	import { ownVoices, TABLE_VOWELS, VOWELS, vowelFormants } from '../vowel.ts';
+	import { ownVoices, TABLE_VOWELS, VOICE_FADE, VOWELS, vowelFormants } from '../vowel.ts';
 	import { VOICE_TYPES } from '../../../../site/src/lib/voice-types.ts';
 	import { VOWELS as LYRIC_VOWELS, type Ipa } from '../../../../site/src/lib/vowels.ts';
 	import { prepare } from './canvas.ts';
@@ -384,7 +384,7 @@
 						value={source(v.ipa)}
 						onchange={(e) => setSource(v.ipa, e.currentTarget.value)}
 						title={own?.vowel === 'fitted' && own.registers
-							? `Fitted: F1–F3 ${own.registers.map((r, g) => `${r.freq.slice(0, 3).join(', ')} Hz on ${noteName(patch.registerKeys[g])}`).join('; ')}${own.contour ? ', with a contour of its own' : ''}`
+							? `Fitted: F1–F3 ${own.registers.map((r, g) => `${r.freq.slice(0, 3).join(', ')} Hz on ${noteName(patch.registerKeys[g])}`).join('; ')}${own.contour ? ', with a contour of its own' : ''}${patch.voice && own.range ? `; fitted to notes from ${noteName(own.range[0])} to ${noteName(own.range[1])}, and beyond them fading into the vowel for all voices over ${VOICE_FADE} semitones` : ''}`
 							: own?.measured.length
 								? `Recorded: F1–F3 ${own.measured[1].join(', ')} Hz`
 								: undefined}

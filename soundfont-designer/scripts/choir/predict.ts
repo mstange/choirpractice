@@ -4,11 +4,11 @@
 import { keyFreq } from '../../src/lib/dsp.ts';
 import { db, type Harmonic } from '../../src/lib/measure.ts';
 import { zones } from '../../src/lib/build.ts';
-import type { Patch, VowelFormants } from '../../src/lib/patch.ts';
+import type { Patch, SungFormants } from '../../src/lib/patch.ts';
 import { toneHarmonics } from '../../src/lib/spectrum.ts';
 
 /** The power of each harmonic of the patch's tone on `key`, singing `formants`. */
-export function predict(p: Patch, key: number, formants: VowelFormants): Harmonic[] {
+export function predict(p: Patch, key: number, formants: SungFormants): Harmonic[] {
 	const root = zones(p.output.spacing).find((z) => key >= z.min && key <= z.max)!.root;
 	return toneHarmonics(p, root, keyFreq(root), p.output.sampleRate, formants).map((h) => ({
 		level: h.amp ** 2,

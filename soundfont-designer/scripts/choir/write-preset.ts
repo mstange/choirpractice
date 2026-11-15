@@ -27,4 +27,7 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 	Pick<Patch['tone'], 'aperiodic' | 'aperiodicTilt'> = ${JSON.stringify(fitted)};
 `
 );
-execFileSync('npx', ['prettier', '--write', path], { stdio: 'inherit' });
+execFileSync('npx', ['prettier', '--write', path], {
+	stdio: 'inherit',
+	cwd: new URL('../..', import.meta.url).pathname
+});

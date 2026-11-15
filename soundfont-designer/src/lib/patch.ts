@@ -26,7 +26,14 @@ export type VowelFormants = {
 	registers?: Formants[];
 	/** dB added to the patch's contour while singing this vowel, per register at CONTOUR_FREQS. */
 	contour?: number[][];
+	/**
+	 * Of a voice type's own vowel, the keys of the lowest and highest notes that it was fitted to:
+	 * beyond them, it fades into the vowel for all voices (see VOICE_FADE in vowel.ts).
+	 */
+	range?: [number, number];
 };
+/** A vowel's formants as a voice type sings them: with the vowel for all voices to fade into. */
+export type SungFormants = VowelFormants & { into?: VowelFormants };
 /** Formant frequencies and bandwidths in Hz, of five formants. */
 export type Formants = { freq: number[]; bw: number[] };
 

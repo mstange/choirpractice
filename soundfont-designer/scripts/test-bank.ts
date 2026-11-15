@@ -9,7 +9,17 @@ import { BasicSoundBank, SoundBankLoader, SpessaSynthProcessor } from 'spessasyn
 import { buildBank } from '../src/lib/build.ts';
 import { atKey } from '../src/lib/dsp.ts';
 import { fitContour, matchContour, measure, patchBank } from '../src/lib/measure.ts';
-import { DEFAULT_PATCH, EDITING_BANK, MATCH_KEYS, complete, type Patch } from '../src/lib/patch.ts';
+import {
+	CONTOUR_FREQS,
+	DEFAULT_PATCH,
+	EDITING_BANK,
+	MATCH_KEYS,
+	complete,
+	type Patch,
+	type VowelFormants
+} from '../src/lib/patch.ts';
+import { toneHarmonics } from '../src/lib/spectrum.ts';
+import { vowelFormants } from '../src/lib/vowel.ts';
 import { Engine } from '../../site/src/lib/synth-engine.ts';
 import { VOWELS } from '../../site/src/lib/vowels.ts';
 import { compress } from '../src/lib/vorbis.ts';
@@ -389,6 +399,51 @@ check(tilt(127) > tilt(32) + 1, `softer is darker (${fmt(tilt(32))} vs ${fmt(til
 		kept.selected === 'ʊ' && !kept.oneVowel && kept.vowels.a?.measured[0].join() === ah.join(),
 		`an old patch with kept vowels keeps them and their "ah" (${kept.selected}, ${Object.keys(kept.vowels)})`
 	);
+}
+
+// A voice type's own vowel sings as fitted on the keys of its range, and from VOICE_FADE beyond
+// them as the vowel for all voices, with something between them on the way.
+{
+	const own: VowelFormants = {
+			vowel: 'fitted',
+			sung: [1, 1, 1],
+			measured: [],
+			registers: DEFAULT_PATCH.registerKeys.map(() => ({
+				freq: [300, 2300, 3000, 3500, 4200],
+				bw: [60, 100, 120, 150, 200]
+			})),
+			contour: DEFAULT_PATCH.registerKeys.map(() => CONTOUR_FREQS.map((f) => (f > 1000 ? 6 : 0))),
+			range: [60, 67]
+		},
+		p = complete({
+			...DEFAULT_PATCH,
+			vowel: { amount: 1, width: 1 },
+			voices: { alto: { a: own } },
+			voice: 'alto'
+		});
+	const harmonics = (f: VowelFormants, key: number) =>
+		toneHarmonics(p, key, 440 * 2 ** ((key - 69) / 12), 32000, f).map((h) => h.amp);
+	const apart = (a: number[], b: number[]) =>
+		Math.max(...a.map((x, i) => Math.abs(20 * Math.log10(x / b[i]))));
+	const sung = vowelFormants(p, 'a').formants,
+		shared = vowelFormants(p, 'a', null).formants;
+	for (const [key, near] of [
+		[63, 'own'],
+		[69, 'between'],
+		[72, 'shared'],
+		[52, 'shared']
+	] as const) {
+		const toOwn = apart(harmonics(sung, key), harmonics(own, key)),
+			toShared = apart(harmonics(sung, key), harmonics(shared, key));
+		check(
+			near === 'own'
+				? toOwn < 0.01
+				: near === 'shared'
+					? toShared < 0.01
+					: toOwn > 1 && toShared > 1,
+			`key ${key}: a voice type's vowel ${near === 'between' ? 'between its own and the shared one' : `as the ${near} one`} (${toOwn.toFixed(1)} and ${toShared.toFixed(1)} dB from them)`
+		);
+	}
 }
 
 // Exported as SF3: the samples decode to their lengths, keep their loops, and play as loud.

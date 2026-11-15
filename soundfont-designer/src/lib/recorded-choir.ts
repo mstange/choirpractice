@@ -167,7 +167,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0, 0, 0, -1.5, -1, -1.5, -2.5, -1.5, 0.5, 3, 1.5,
 						1.5, 2, -0.5, 0, 1.5, 0, 0, 0
 					]
-				]
+				],
+				range: [62, 78]
 			},
 			ɛ: {
 				vowel: 'fitted',
@@ -191,7 +192,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						2, 2, 2, 2, 2.5, 2.5, 3, 3, 3, 2, 2, 0.5, -1.5, -2.5, -0.5, -1, 0.5, 0.5, -2, -1, -1.5,
 						-4, -4.5, -6, -5.5
 					]
-				]
+				],
+				range: [59, 78]
 			},
 			i: {
 				vowel: 'fitted',
@@ -215,7 +217,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0, 0, 0, -0.5, 1, 2, 2, 0.5, 0, 0.5, 2.5, 1, -2,
 						1.5, -1, -3.5, -1.5, -0.5, -0.5
 					]
-				]
+				],
+				range: [62, 72]
 			},
 			ɔ: {
 				vowel: 'fitted',
@@ -239,7 +242,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0, 0, 0, 0.5, 0.5, 0.5, 1, 1.5, 1.5, 0.5, -1, -1.5, -0.5, -0.5, -0.5, -2, -1, -0.5,
 						-0.5, -3.5, -1, 0.5, 0, 1.5, 1.5
 					]
-				]
+				],
+				range: [62, 79]
 			},
 			u: {
 				vowel: 'fitted',
@@ -263,7 +267,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-1, -1, -1, -1, -1, -1, -0.5, -0.5, -1, -2.5, -1.5, -2, -3, -1, 1, 1, 1, 0, 0.5, -2.5,
 						0.5, 3, 3.5, 3.5, 3.5
 					]
-				]
+				],
+				range: [60, 77]
 			}
 		},
 		alto: {
@@ -289,7 +294,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0.5, 0.5, 0.5, 0.5, 0.5, 0, 0.5, 0.5, 0, -2.5, -2.5, -2.5, -2.5, -2, -1, 2, 3, 4, 4.5,
 						-1.5, -3, -1.5, 0, 0.5, 0
 					]
-				]
+				],
+				range: [59, 69]
 			},
 			ɛ: {
 				vowel: 'fitted',
@@ -313,7 +319,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						2, 2, 2, 2.5, 2.5, 3, 4, 4.5, 5, 3.5, 3.5, 2, 1.5, 0.5, 0.5, 1.5, 0.5, -0.5, 1, -8, -8,
 						-6, -6.5, -7, -7
 					]
-				]
+				],
+				range: [55, 71]
 			},
 			i: {
 				vowel: 'fitted',
@@ -337,7 +344,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0, 0, 0, 0, 0, 0, 1, 1, 1.5, 0.5, 1.5, 2.5, 1.5, 0, 1, 3, 3.5, 1.5, 0, -4.5, -5.5, -4,
 						-3, -2, -2
 					]
-				]
+				],
+				range: [59, 66]
 			},
 			ɔ: {
 				vowel: 'fitted',
@@ -361,7 +369,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0.5, 0.5, 0.5, 0.5, 1, 1, 1.5, 1.5, 1, -1, -1, -1.5, -2, -1.5, -2, -0.5, 0.5, 1.5, 2,
 						-1.5, -2.5, -2.5, -0.5, 0.5, 0.5
 					]
-				]
+				],
+				range: [59, 67]
 			},
 			u: {
 				vowel: 'fitted',
@@ -385,7 +394,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-1.5, -1.5, -1.5, -1.5, -1.5, -1, -0.5, -0.5, 0, -1.5, -1, -0.5, -1, -1, -0.5, 0.5, 1.5,
 						2, 2.5, 0.5, -0.5, -0.5, 1, 2.5, 2.5
 					]
-				]
+				],
+				range: [55, 66]
 			}
 		},
 		tenor: {
@@ -411,7 +421,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0, 0, 0, -0.5, -0.5, -1, -0.5, -1.5, -2.5, -3.5, -2.5, -2, -2.5, -2.5, -1.5, 0, 2, 2.5,
 						2.5, 0.5, 2, 2.5, 2, 2, 2
 					]
-				]
+				],
+				range: [53, 64]
 			},
 			ɛ: {
 				vowel: 'fitted',
@@ -435,7 +446,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						1.5, 1.5, 1.5, 1.5, 1, 1, 1.5, 1, 0, -2, -1.5, -1, -1.5, -1, 1, 2.5, 4, 3.5, 3, 0, -0.5,
 						-2.5, -6, -5.5, -5.5
 					]
-				]
+				],
+				range: [50, 64]
 			},
 			i: {
 				vowel: 'fitted',
@@ -459,7 +471,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0, 0, 0, 0, 0, 0, 0, -0.5, -0.5, -1.5, -1, -1, -1.5, -1.5, 0.5, 3, 4, 3, 4, 2, -1.5, -3,
 						-3.5, -2.5, -2
 					]
-				]
+				],
+				range: [48, 62]
 			},
 			ɔ: {
 				vowel: 'fitted',
@@ -483,7 +496,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0, -0.5, -1, -2, -1.5, -1.5, -2, -2, -1.5, 0, 1,
 						1.5, 2.5, 1, 1, 0.5, 1, 2, 2
 					]
-				]
+				],
+				range: [55, 62]
 			},
 			u: {
 				vowel: 'fitted',
@@ -507,7 +521,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-2, -2, -2, -2, -2, -2, -2, -2, -2.5, -3.5, -3, -3, -3.5, -3.5, -3.5, -1.5, 1, 4, 4,
 						2.5, 4.5, 4, 5, 6, 6
 					]
-				]
+				],
+				range: [52, 63]
 			}
 		},
 		bass: {
@@ -533,7 +548,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0, 0, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -2, -1.5, -1.5, -2, -1.5, 0, 2.5, 3.5,
 						2.5, 2.5, -0.5, 0, -1, 0, 0.5, 0.5
 					]
-				]
+				],
+				range: [43, 60]
 			},
 			ɛ: {
 				vowel: 'fitted',
@@ -557,7 +573,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						0.5, 0, 0, 0, 0, 0, 0.5, 0.5, 1, -0.5, 0, 0, -0.5, -0.5, 1, 2, 2.5, 1, 1, -2, -1.5,
 						-2.5, -2, -1.5, -1.5
 					]
-				]
+				],
+				range: [41, 60]
 			},
 			i: {
 				vowel: 'fitted',
@@ -581,7 +598,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-1.5, -1, -1, -1, -1, -0.5, 0, 0, 0.5, -1, -1, -1, -1.5, -1, 0.5, 2.5, 3, 1.5, 1.5,
 						-0.5, -0.5, -1, -0.5, 0.5, 0.5
 					]
-				]
+				],
+				range: [43, 48]
 			},
 			ɔ: {
 				vowel: 'fitted',
@@ -605,7 +623,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0, 0, 0.5, -1.5, -1, -1, -2, -1.5, -0.5, 1.5, 2, 1,
 						1.5, -0.5, -0.5, -1, 0, 1, 0.5
 					]
-				]
+				],
+				range: [42, 50]
 			},
 			u: {
 				vowel: 'fitted',
@@ -629,7 +648,8 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 						-1.5, -1.5, -1.5, -1.5, -1.5, -1.5, -0.5, -0.5, 0, -1.5, -1, -1, -1.5, -1.5, 0, 2, 2.5,
 						1.5, 1.5, 0, 0.5, 0.5, 1.5, 2.5, 2.5
 					]
-				]
+				],
+				range: [43, 50]
 			}
 		}
 	}

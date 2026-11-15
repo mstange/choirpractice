@@ -233,8 +233,12 @@
 				log
 				unit="Hz"
 			/>
+			<p class="hint">
+				Aperiodic noise on {noteName(patch.registerKeys[register])}, the register selected under the
+				contour:
+			</p>
 			<Slider
-				label="Aperiodic on {noteName(patch.registerKeys[register])}"
+				label="Aperiodic"
 				bind:value={patch.tone.aperiodic[register]}
 				min={-90}
 				max={0}
@@ -242,7 +246,7 @@
 				title="Noise between the harmonics, shaped like them: between two neighbours, against them, at 1 kHz, on the register selected under the contour, and in between on the keys between; -90 is off"
 			/>
 			<Slider
-				label="Aperiodic tilt on {noteName(patch.registerKeys[register])}"
+				label="Aperiodic tilt"
 				bind:value={patch.tone.aperiodicTilt[register]}
 				min={-12}
 				max={12}

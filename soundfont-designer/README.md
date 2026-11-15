@@ -22,6 +22,7 @@ The page plays the pieces that the choir app knows: the demo, and the seasons th
 
 - `npm test` builds the default patch, writes it as SF2 and SF3, reads it back and renders it with spessasynth, and checks what the file does (see `scripts/test-bank.ts`).
 - `node scripts/spectrum.ts [--match] [preset or patch JSON] [keys]` compares the sustain of MS Basic's Choir Aahs with a patch's, as spessasynth renders them: per harmonic its level, the noise beside it and its spread in cents, and how a strong harmonic moves over time. With `--match`, it first matches the patch's contour to Choir Aahs, and measures how near that brought it.
+- `node scripts/export.ts [preset or patch JSON] program out.sf3` exports a patch as Export SF3 does, with a preset per vowel unless the patch sings every syllable on one. `media/soundfont/91.sf3` (Choir Vowels) is Recorded Choir with a preset per vowel, and `92.sf3` (Choir Vowels, no SATB) the same without its voice types' vowels, for hearing what they change.
 - `scripts/choir/` fits a patch to a recorded choir, the Choral Singing Dataset's sections singing _Locus iste_: see its README.
 - `npm run check` type-checks, `npm run format` formats with Prettier.
 

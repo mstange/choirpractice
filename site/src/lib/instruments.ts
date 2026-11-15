@@ -7,6 +7,7 @@ export const INSTRUMENTS: [program: number, label: string][] = [
 	[53, 'Voice Oohs'],
 	[54, 'Practice Synth'],
 	[91, 'Choir Vowels'],
+	[92, 'Choir Vowels, no SATB'],
 	[75, 'Pan Flute'],
 	[73, 'Flute'],
 	[71, 'Clarinet'],
@@ -17,10 +18,11 @@ export const INSTRUMENTS: [program: number, label: string][] = [
 
 /**
  * The programs whose soundfont file in media/soundfont/ is not cut from MS Basic but checked in as
- * it is: 54, Practice Synth, is a synthesized voice made for this page, and 91, Choir Vowels, a
- * choir with a preset per vowel and voice type, made with the soundfont designer.
+ * it is: 54, Practice Synth, is a synthesized voice made for this page; 91, Choir Vowels, a choir
+ * with a preset per vowel and voice type, made with the soundfont designer; and 92, the same with
+ * the vowels for all voices only, for hearing what the voice types' own vowels change.
  */
-export const OWN_PROGRAMS = new Set([54, 91]);
+export const OWN_PROGRAMS = new Set([54, 91, 92]);
 
 /** The soundfont file of a General MIDI program, in the soundfont/ directory of the media. */
 export const soundfontFile = (program: number) => `${program}.sf3`;

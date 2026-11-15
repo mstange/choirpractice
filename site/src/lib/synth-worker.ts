@@ -2,7 +2,7 @@
 // the main thread and before the audio thread plays them (see synth.svelte.ts).
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
 import { parseMidi, type MidiReply } from './midi.ts';
-import { presetBank, type DecodedSample } from './synth-engine.ts';
+import type { DecodedSample } from './synth-engine.ts';
 
 export type Request =
 	| { type: 'midi'; url: string }
@@ -50,10 +50,8 @@ async function decode(url: string, notes: Played[]): Promise<SamplesReply> {
 		buffer = entry.sent ? undefined : entry.buffer,
 		samples: DecodedSample[] = [];
 	entry.sent = true;
-	// The preset that a bank select plays, as the engine and the synthesizer pick it.
-	const banksOf = bank.presets.map((p) => p.bankMSB),
-		preset = (b = 0) =>
-			bank.presets.find((p) => p.bankMSB === presetBank(banksOf, b)) ?? bank.presets[0];
+	// The preset that a bank select plays, as the synthesizer picks it: the first if none is there.
+	const preset = (b = 0) => bank.presets.find((p) => p.bankMSB === b) ?? bank.presets[0];
 	for (const [key, vel, b] of notes)
 		for (const { sample } of preset(b).getVoiceParameters(key, vel)) {
 			const index = bank.samples.indexOf(sample);

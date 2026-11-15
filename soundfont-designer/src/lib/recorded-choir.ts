@@ -2,7 +2,7 @@
 // scripts/choir/write-preset.ts from the scripts' fits (see scripts/choir/README.md).
 import type { Patch } from './patch.ts';
 
-export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' | 'voices'> &
+export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels'> &
 	Pick<Patch['tone'], 'aperiodic' | 'aperiodicTilt'> = {
 	registerKeys: [40, 58, 76],
 	aperiodic: [-4.3, -23.8, -43.3],
@@ -142,6 +142,5 @@ export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' |
 				]
 			]
 		}
-	},
-	voices: {}
+	}
 };

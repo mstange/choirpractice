@@ -1,6 +1,6 @@
 // Moves what the vowels of all voices have in common in their own contours into the patch's
 // contour: the mean of their own contours, which is added to the patch's and taken from every
-// vowel's own, of all voices and of each voice type. Every vowel's tone stays the same, and the
+// vowel's own. Every vowel's tone stays the same, and the
 // patch's contour becomes the part of the timbre that doesn't change with the vowel.
 //
 // Usage: node scripts/choir/share-contour.ts patch.json out.json
@@ -17,7 +17,6 @@ p.contour = p.contour.map((row, g) => row.map((v, j) => v + mean[g][j]));
 const take = (f: VowelFormants) =>
 	(f.contour = mean.map((row, g) => row.map((m, j) => (f.contour?.[g][j] ?? 0) - m)));
 Object.values(p.vowels).forEach(take);
-for (const set of Object.values(p.voices)) Object.values(set).forEach(take);
 console.log(
 	`moved into the contour, per register, mean and range in dB: ${mean
 		.map((row) => {

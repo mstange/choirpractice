@@ -1,6 +1,5 @@
 // Writes what Recorded Choir (src/lib/presets.ts) has of a patch fitted with these scripts into
-// src/lib/recorded-choir.ts: its registers, noise between the harmonics, contour, and the vowels of
-// all voices and of each voice type.
+// src/lib/recorded-choir.ts: its registers, noise between the harmonics, contour and vowels.
 //
 // Usage: node scripts/choir/write-preset.ts patch.json
 import { execFileSync } from 'node:child_process';
@@ -14,8 +13,7 @@ const fitted = {
 	aperiodic: p.tone.aperiodic,
 	aperiodicTilt: p.tone.aperiodicTilt,
 	contour: p.contour,
-	vowels: p.vowels,
-	voices: p.voices
+	vowels: p.vowels
 };
 writeFileSync(
 	path,
@@ -23,7 +21,7 @@ writeFileSync(
 // scripts/choir/write-preset.ts from the scripts' fits (see scripts/choir/README.md).
 import type { Patch } from './patch.ts';
 
-export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels' | 'voices'> &
+export const RECORDED_CHOIR: Pick<Patch, 'registerKeys' | 'contour' | 'vowels'> &
 	Pick<Patch['tone'], 'aperiodic' | 'aperiodicTilt'> = ${JSON.stringify(fitted)};
 `
 );

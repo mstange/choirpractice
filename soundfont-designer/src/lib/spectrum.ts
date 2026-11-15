@@ -1,7 +1,7 @@
 // The tone's spectrum, for build.ts and the plots.
 import { atKey, between, eqCurve } from './dsp.ts';
-import { CONTOUR_FREQS, type Patch, type SungFormants, type VowelFormants } from './patch.ts';
-import { ownWeight, selectedFormants, vowelCurve } from './vowel.ts';
+import { CONTOUR_FREQS, type Patch, type VowelFormants } from './patch.ts';
+import { selectedFormants, vowelCurve } from './vowel.ts';
 
 export const CONTOUR_OCTAVES = CONTOUR_FREQS.map(Math.log2);
 
@@ -19,19 +19,15 @@ export function contourCurve(keys: number[], contour: number[][], key: number) {
 
 /**
  * The gain in dB of the EQ, the vowel and the contour at `key`, with the vowel's own change to
- * the contour (a voice type's mixed with that of the vowel for all voices as it fades into it):
- * what shapes the tone by frequency, singing `formants`, by default the selected vowel's.
+ * the contour: what shapes the tone by frequency, singing `formants`, by default the selected
+ * vowel's.
  */
-export function toneEq(p: Patch, key: number, formants: SungFormants = selectedFormants(p)) {
+export function toneEq(p: Patch, key: number, formants: VowelFormants = selectedFormants(p)) {
 	const eq = eqCurve(p.eq),
 		vowel = vowelCurve(formants, p, key),
 		contour = contourCurve(p.registerKeys, p.contour, key),
-		w = ownWeight(formants, key),
-		ownOf = (f?: VowelFormants) =>
-			f?.contour ? contourCurve(p.registerKeys, f.contour, key) : () => 0,
-		mine = ownOf(formants),
-		theirs = w < 1 ? ownOf(formants.into) : () => 0;
-	return (f: number) => eq(f) + vowel(f) + contour(f) + w * mine(f) + (1 - w) * theirs(f);
+		own = formants.contour ? contourCurve(p.registerKeys, formants.contour, key) : () => 0;
+	return (f: number) => eq(f) + vowel(f) + contour(f) + own(f);
 }
 
 /**
@@ -51,7 +47,7 @@ export function toneHarmonics(
 	key: number,
 	f0: number,
 	sampleRate: number,
-	formants?: SungFormants
+	formants?: VowelFormants
 ) {
 	const { tilt, even, harmonics, maxHarmonic } = p.tone;
 	const count = Math.min(maxHarmonic, Math.floor((NYQUIST * sampleRate) / f0));

@@ -1,5 +1,4 @@
 // The parameters of a designed instrument, from which build.ts makes a sound bank.
-import type { VoiceType } from '../../../site/src/lib/voice-types.ts';
 import type { Ipa } from '../../../site/src/lib/vowels.ts';
 import { nearestInTable } from './vowel.ts';
 
@@ -26,14 +25,7 @@ export type VowelFormants = {
 	registers?: Formants[];
 	/** dB added to the patch's contour while singing this vowel, per register at CONTOUR_FREQS. */
 	contour?: number[][];
-	/**
-	 * Of a voice type's own vowel, the keys of the lowest and highest notes that it was fitted to:
-	 * beyond them, it fades into the vowel for all voices (see VOICE_FADE in vowel.ts).
-	 */
-	range?: [number, number];
 };
-/** A vowel's formants as a voice type sings them: with the vowel for all voices to fade into. */
-export type SungFormants = VowelFormants & { into?: VowelFormants };
 /** Formant frequencies and bandwidths in Hz, of five formants. */
 export type Formants = { freq: number[]; bw: number[] };
 
@@ -94,13 +86,6 @@ export interface Patch {
 	 * is the "ah" that the other sung vowels are measured against.
 	 */
 	vowels: Partial<Record<Ipa, VowelFormants>>;
-	/**
-	 * Vowels of a voice type's own (see the choir app's voice-types.ts), which its parts sing
-	 * instead of those of `vowels`. A voice type with any has presets of its own (see vowelSet()).
-	 */
-	voices: Partial<Record<VoiceType, Partial<Record<Ipa, VowelFormants>>>>;
-	/** The voice type whose vowels the vowel panel edits and the keyboard plays; null for all. */
-	voice: VoiceType | null;
 	/**
 	 * The vowel being edited, which the keyboard and the plots play. With `oneVowel`, the
 	 * instrument sings it on every syllable, in one preset; else it has a preset for each of the
@@ -200,8 +185,6 @@ export const DEFAULT_PATCH: Patch = {
 	},
 	vowel: { amount: 0.2, width: 1 },
 	vowels: {},
-	voices: {},
-	voice: null,
 	selected: 'a',
 	oneVowel: true,
 	registerKeys: CONTOUR_KEYS,
@@ -265,6 +248,9 @@ export function complete(p: Partial<Patch>): Patch {
 		tone.aperiodicTilt = CONTOUR_KEYS.map(() => tilt);
 	}
 	delete tone.aperiodicSlope;
+	// Patches saved earlier could have vowels of each voice type's own, which nothing sings now.
+	delete d.voices;
+	delete d.voice;
 	// Patches saved earlier had their formants as EQ peaks of a tenor's, which a third of the
 	// amount at half the width comes near.
 	if ('formant' in p) {

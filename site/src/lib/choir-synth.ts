@@ -1,4 +1,4 @@
-import { soundfontFile } from './instruments.ts';
+import { FORMANT_PROGRAMS, formantFile, soundfontFile } from './instruments.ts';
 import { sing } from './singing.ts';
 import { Synth, type Score } from './synth.svelte.ts';
 import type { MidiReply } from './synth-worker.ts';
@@ -39,7 +39,8 @@ const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32))
  *
  * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's 16,
  * which stays silent until setPianoGain(). The vocal parts sing their melismas legato (see
- * singing.ts); the piano strikes every note.
+ * singing.ts); the piano strikes every note. The instruments with a preset per vowel slide from
+ * one vowel to another with their formant tables (FORMANT_PROGRAMS).
  */
 export class ChoirSynth extends Synth {
 	#parts: Part[];
@@ -65,6 +66,14 @@ export class ChoirSynth extends Synth {
 		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
 		this.#vocalProgram = vocalProgram;
+		for (const program of FORMANT_PROGRAMS)
+			fetch(soundfontUrl(formantFile(program)))
+				.then((res) => {
+					if (!res.ok) throw new Error(`${res.status} for ${res.url}`);
+					return res.json();
+				})
+				.then((table) => this.setFormants(program, table))
+				.catch((e) => this.fail(e));
 		// Channel 9 of every 16 plays drum kits.
 		let next = 16;
 		for (const { name, vocal, channels } of parts) {

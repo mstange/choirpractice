@@ -8,6 +8,8 @@ import { EDITING_BANK } from './patch.ts';
 import type { Patch } from './patch.ts';
 import type { DecodedSample } from '../../../site/src/lib/synth-engine.ts';
 import { compress } from './vorbis.ts';
+import { formantTable, hasFormants } from './vowel.ts';
+import type { FormantTable } from '../../../site/src/lib/formants.ts';
 
 /**
  * A build for playing, with a preview of `key` and, with `set`, the patch's vowels (see
@@ -35,6 +37,8 @@ export type Built = {
 	wave: Float32Array;
 	waveRate: number;
 	preview: Preview;
+	/** The formants of its vowels, if it has a preset per vowel at amount 1 (see formantTable()). */
+	formants: FormantTable | null;
 	ms: number;
 };
 export type BuildReply = { id: number } & (
@@ -132,6 +136,7 @@ onmessage = async ({ data }: MessageEvent<BuildRequest>) => {
 				off: OFF,
 				curves: DYNAMICS.map((d) => ({ label: d[0], db: render(read, program, key, d) }))
 			},
+			formants: hasFormants(patch, data.set) ? formantTable(patch) : null,
 			ms: performance.now() - start
 		};
 		postMessage({ id, built } satisfies BuildReply);

@@ -80,12 +80,13 @@
 		if (!synth || !built) return;
 		const s = synth,
 			b = built;
-		untrack(() =>
+		untrack(() => {
 			s.setBank(
 				b.file.slice(0),
 				b.samples.map(({ index, data }) => ({ index, data: data.slice() }))
-			)
-		);
+			);
+			s.setFormants(DESIGNED, b.formants);
+		});
 	});
 	$effect(() => void synth?.setVoice(voice));
 	$effect(() => synth?.setSpeed(speed));

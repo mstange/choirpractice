@@ -1,4 +1,4 @@
-import { INSTRUMENTS, soundfontFile } from './instruments.ts';
+import { FORMANT_PROGRAMS, formantFile, INSTRUMENTS, soundfontFile } from './instruments.ts';
 import { loadSeason, MEDIA_CACHE, mediaUrl, setSavedOffline } from './pieces.ts';
 import { programsUsed } from './choir-synth.ts';
 import type { PieceData } from './types.ts';
@@ -36,6 +36,9 @@ export async function saveOffline(season: string, progress: (done: number, total
 			await Promise.all(piece.engravings.map((e) => save(url(e.file))));
 		})
 	);
-	await Promise.all([...programs].map((p) => save(mediaUrl('soundfont', soundfontFile(p)))));
+	await Promise.all([
+		...[...programs].map((p) => save(mediaUrl('soundfont', soundfontFile(p)))),
+		...FORMANT_PROGRAMS.map((p) => save(mediaUrl('soundfont', formantFile(p))))
+	]);
 	setSavedOffline(season, true);
 }

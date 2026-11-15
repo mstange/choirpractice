@@ -3,7 +3,7 @@
 // through a melisma, one note going on into the next rather than starting anew.
 import type { ScoreEvent, ScoreNote } from './synth-engine.ts';
 import type { Part, Voice } from './types.ts';
-import { VOWEL_BANK, glideOf, vowelsOf, type Ipa } from './vowels.ts';
+import { VOWEL_BANK, glideOf, vowelsOf } from './vowels.ts';
 
 /** Seconds in which a melisma's note crossfades into the next. */
 const LEGATO_FADE = 0.06;
@@ -14,27 +14,26 @@ const LEGATO_FADE = 0.06;
 const JOIN = 0.01;
 /**
  * A diphthong's second vowel takes the end of its syllable's last note: this share of it, but at
- * most this many seconds of the score, crossfading from the first over at most DIPHTHONG_FADE
- * seconds. Singers hold the first vowel and move on to the second just before the next syllable.
+ * most this many seconds of the score. Singers hold the first vowel and move on to the second just
+ * before the next syllable. The note goes on into the second vowel's preset, crossfading over at
+ * most DIPHTHONG_FADE seconds, and its formants slide there from the first's over the rest of the
+ * note (see ScoreEvent).
  */
 const DIPHTHONG_SHARE = 0.3,
 	DIPHTHONG_END = 0.15,
-	DIPHTHONG_FADE = 0.1;
+	DIPHTHONG_FADE = 0.03;
 /**
- * A syllable that starts with a glide, such as the w of "queen", starts its first note on the
- * vowel that the glide moves from, such as "oo", and goes on into its own vowel after this many
- * seconds of the score, but at most this share of the note, crossfading over GLIDE_FADE seconds.
+ * Seconds in which the formants of a syllable that starts with a glide, such as the w of "queen",
+ * slide from the glide's vowel, such as "oo", to the syllable's.
  */
-const GLIDE_START = 0.03,
-	GLIDE_SHARE = 0.2,
-	GLIDE_FADE = 0.06;
+const GLIDE = 0.08;
 
 /**
  * Sings each vocal part's syllables on their vowels: a bank select (see ScoreEvent) before the
  * first note of each syllable picks the vowel's preset (see vowels.ts), for parts whose syllables
- * have vowels. An instrument without vowels plays its one preset for all of them. A syllable that
- * starts with a glide starts on the glide's vowel and goes on legato into its own, and a
- * diphthong's last note goes on legato into its second vowel, at the same key.
+ * have vowels. An instrument without vowels plays its one preset for all of them. The formants of a
+ * syllable that starts with a glide slide into its vowel from the glide's, and a diphthong's last
+ * note goes on legato into its second vowel, at the same key, with its formants sliding there.
  *
  * Makes the notes of each melisma legato (see ScoreEvent): every note of a syllable after its
  * first, at another pitch than the note before. A repeated pitch starts anew, as a singer would
@@ -86,47 +85,36 @@ export function sing(events: ScoreEvent[], notes: ScoreNote[], parts: Part[], vo
 		const vowels = voice.syllables.map((s) => vowelsOf(s.p)),
 			glides = voice.syllables.map((s) => glideOf(s.p));
 		if (!vowels.some((v) => v.length)) continue;
-		// The bank of each syllable's vowel at its first note, of the vowel that a glide moves from
-		// before it, and of a diphthong's second vowel near the end of its last.
+		// The bank of each syllable's vowel at its first note, and of a diphthong's second vowel
+		// near the end of its last.
 		const banks: [t: number, bank: number][] = [];
 		voice.notes.forEach((n, i) => {
 			const note = midi[i],
 				v = vowels[n.s],
 				glide = glides[n.s];
 			if (!note) return;
-			const { t0, t1 } = note,
-				d = Math.min(DIPHTHONG_END, DIPHTHONG_SHARE * (t1 - t0)),
-				g = Math.min(GLIDE_START, GLIDE_SHARE * (t1 - t0));
-			// The vowels that the note moves through, from its start on, each with the longest
-			// crossfade into it.
-			const changes: [t: number, ipa: Ipa, fade: number][] = [];
+			const on = ons.get(`${ch}:${note.key}:${note.t0}`),
+				bank = VOWEL_BANK.get(v[0] ?? 'a')!;
 			if (first(i)) {
-				if (glide) changes.push([t0, glide, 0]);
-				changes.push([glide ? t0 + g : t0, v[0] ?? 'a', GLIDE_FADE]);
+				banks.push([note.t0, bank]);
+				if (glide && on) on.slide = { bank: VOWEL_BANK.get(glide)!, seconds: GLIDE };
 			}
-			if (last(i) && v.length === 2) changes.push([t1 - d, v[1], DIPHTHONG_FADE]);
-			if (!changes.length) return;
-			if (changes[0][0] === t0) banks.push([t0, VOWEL_BANK.get(changes.shift()![1])!]);
-			if (!ons.has(`${ch}:${note.key}:${t0}`)) return;
-			// The note goes on legato into each later vowel, at the same key.
-			let piece = note;
-			changes.forEach(([t, ipa, fade], k) => {
-				const until = changes[k + 1]?.[0] ?? t1;
-				banks.push([t, VOWEL_BANK.get(ipa)!]);
-				added.push(
-					{ t, data: [0x80 | ch, note.key, 0] },
-					{
-						t,
-						data: [0x90 | ch, note.key, note.vel],
-						legato: { from: note.key, fade: Math.min(fade, until - t) }
-					}
-				);
-				const next = { ...piece, t0: t, onset: piece.onset ?? piece.t0 };
-				piece.t1 = t;
-				notes.push(next);
-				mine.push(next);
-				piece = next;
-			});
+			if (!last(i) || v.length !== 2 || !on) return;
+			const t = note.t1 - Math.min(DIPHTHONG_END, DIPHTHONG_SHARE * (note.t1 - note.t0));
+			banks.push([t, VOWEL_BANK.get(v[1])!]);
+			added.push(
+				{ t, data: [0x80 | ch, note.key, 0] },
+				{
+					t,
+					data: [0x90 | ch, note.key, note.vel],
+					legato: { from: note.key, fade: Math.min(DIPHTHONG_FADE, note.t1 - t) },
+					slide: { bank, seconds: note.t1 - t }
+				}
+			);
+			const second = { ...note, t0: t, onset: note.onset ?? note.t0 };
+			note.t1 = t;
+			notes.push(second);
+			mine.push(second);
 		});
 		for (const [t, bank] of banks) added.push({ t, data: [0xb0 | ch, 0, bank] });
 		// Each note of the channel plays in the bank that the last bank select before it gave.

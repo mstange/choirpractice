@@ -1,4 +1,5 @@
 import type { DecodedSample, Message, ScoreEvent, ScoreNote } from './synth-engine.ts';
+import type { FormantTable } from './formants.ts';
 import type { MidiReply, Played, Request, SamplesReply } from './synth-worker.ts';
 import workletUrl from './synth-worklet.ts?worker&url';
 
@@ -176,6 +177,14 @@ export class Synth {
 			buffer,
 			...samples.map((s) => s.data.buffer)
 		]);
+	}
+
+	/**
+	 * Gives `program` the formants of its presets per vowel, with which its notes slide from one
+	 * vowel to another (see ScoreEvent), or none.
+	 */
+	setFormants(program: number, table: FormantTable | null) {
+		this.#post({ type: 'formants', program, table });
 	}
 
 	/** Plays channel `ch` with a program of a bank given to addBank(). */

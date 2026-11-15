@@ -1,4 +1,5 @@
 import { SoundBankLoader, SpessaSynthProcessor, type BasicSoundBank } from 'spessasynth_core';
+import { formantsAt, Slide, type FormantTable } from './formants.ts';
 
 /** Seconds in which a channel's gain gets most of the way to a new value. */
 const GAIN_TIME = 0.05;
@@ -12,12 +13,17 @@ const GAIN_TIME = 0.05;
  * A note-on with `legato` doesn't start a note of its own: the note `from` of its channel, whose
  * note-off comes just before, crossfades into it over `fade` seconds, and it goes on from where
  * that note's envelopes and samples have got to, without an attack.
+ *
+ * A note-on with `slide` starts with the formants of its program's preset in bank `bank`, which
+ * move to those of the preset that it plays over `seconds`, if the program has a formant table
+ * (see formants.ts).
  */
 export type ScoreEvent = {
 	t: number;
 	data: number[];
 	offset?: number;
 	legato?: { from: number; fade: number };
+	slide?: { bank: number; seconds: number };
 };
 /**
  * A note of the score, from its note-on to its note-off. A legato note has the `onset` of the
@@ -45,6 +51,7 @@ export type Message =
 	| { type: 'bank'; id: string; buffer?: ArrayBuffer; samples: DecodedSample[] }
 	| { type: 'program'; ch: number; program: number }
 	| { type: 'gain'; ch: number; gain: number }
+	| { type: 'formants'; program: number; table: FormantTable | null }
 	/** A MIDI message to play now, such as a note from a keyboard. */
 	| { type: 'midi'; data: number[]; offset?: number }
 	| PlayCommand;
@@ -84,6 +91,7 @@ interface Voice {
 	modEnv2: { init(voice: Voice): void };
 	volEnv: { sampleTime: number };
 	wavetable: {
+		process(n: number, ratio: number, buffer: Float32Array): boolean;
 		sampleData: Float32Array | undefined;
 		cursor: number;
 		end: number;
@@ -130,6 +138,8 @@ export class Engine {
 	/** The next event to dispatch. */
 	#next = 0;
 	#fades: Fade[] = [];
+	/** The formant tables of programs, by program. */
+	#formants = new Map<number, FormantTable>();
 
 	constructor(sampleRate: number) {
 		this.#rate = sampleRate;
@@ -178,6 +188,9 @@ export class Engine {
 				this.#gains.set(m.ch, { target: m.gain, gain: m.gain });
 				this.#channel(m.ch).setSystemParameter('gain', m.gain);
 			}
+		} else if (m.type === 'formants') {
+			if (m.table) this.#formants.set(m.program, m.table);
+			else this.#formants.delete(m.program);
 		} else if (m.type === 'midi') {
 			this.#channel((m.data[0] & 0x0f) + (m.offset ?? 0));
 			this.#message(m.data, m.offset);
@@ -276,12 +289,18 @@ export class Engine {
 		while (this.#next < events.length && events[this.#next].t <= pos) {
 			const e = events[this.#next++];
 			if (e.legato) this.#legato(e);
+			else if (e.slide)
+				this.#slide(
+					e,
+					this.#start(() => this.#message(e.data, e.offset))
+				);
 			else this.#message(e.data, e.offset);
 		}
 	}
 
 	/** Plays a legato note-on (see ScoreEvent). */
-	#legato({ data, offset, legato }: ScoreEvent) {
+	#legato(e: ScoreEvent) {
+		const { data, offset, legato } = e;
 		const synth = this.synth,
 			now = synth.currentTime,
 			ch = (data[0] & 0x0f) + (offset ?? 0),
@@ -295,7 +314,11 @@ export class Engine {
 				!v.isInRelease &&
 				v.releaseStartTime !== Infinity
 		);
-		if (!held.length) return synth.processMessage(data, offset);
+		if (!held.length) {
+			const started = this.#start(() => synth.processMessage(data, offset));
+			if (e.slide) this.#slide(e, started);
+			return;
+		}
 		const since = now - Math.min(...held.map((v) => v.startTime));
 		this.#fades = this.#fades.filter((f) => !held.includes(f.voice));
 		for (const v of held) v.releaseStartTime = Infinity;
@@ -326,6 +349,19 @@ export class Engine {
 			v.gainModifier = 0;
 		}
 		for (const v of held) this.#fades.push(fadeOf(v, true, !twins.has(v)));
+		if (e.slide) this.#slide(e, started);
+	}
+
+	/** Gives the voices that a note-on with `slide` started their slide (see ScoreEvent). */
+	#slide({ data, offset, slide }: ScoreEvent, voices: Voice[]) {
+		const channel = this.#channel((data[0] & 0x0f) + (offset ?? 0)),
+			table = this.#formants.get(channel.patch.program);
+		if (!table) return;
+		for (const v of voices) {
+			const from = formantsAt(table, slide!.bank, v.midiNote),
+				to = formantsAt(table, channel.patch.bankMSB, v.midiNote);
+			if (from && to) filter(v, new Slide(from, to, slide!.seconds, this.#rate));
+		}
 	}
 
 	/** Calls `noteOn`, and returns the voices that it started. */
@@ -397,4 +433,28 @@ function advance(v: Voice, seconds: number, sampleRate: number) {
 	}
 	// A sample without a loop may have ended, like a piano note that died away; then the voice ends
 	// when it renders.
+}
+
+/** The slide of each voice's oscillator that has one, and the voice's start then. */
+const slides = new WeakMap<object, { slide: Slide; voice: Voice; start: number }>();
+const patched = new WeakSet<object>();
+
+/**
+ * Filters the samples of `voice` with `slide` while it lasts: right after its oscillator renders
+ * them, before the voice's gain, pan and effect sends, so that its reverb has the slide too.
+ */
+function filter(voice: Voice, slide: Slide) {
+	const proto = Object.getPrototypeOf(voice.wavetable);
+	if (!patched.has(proto)) {
+		patched.add(proto);
+		const process = proto.process;
+		proto.process = function (this: object, n: number, ratio: number, buffer: Float32Array) {
+			const active = process.call(this, n, ratio, buffer),
+				s = slides.get(this);
+			// A voice that started another note since has nothing to do with the slide.
+			if (s && (s.voice.startTime !== s.start || !s.slide.run(buffer, n))) slides.delete(this);
+			return active;
+		};
+	}
+	slides.set(voice.wavetable, { slide, voice, start: voice.startTime });
 }

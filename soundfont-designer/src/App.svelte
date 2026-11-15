@@ -12,6 +12,7 @@
 	import Response from './lib/ui/Response.svelte';
 	import Slider from './lib/ui/Slider.svelte';
 	import Vowels from './lib/ui/Vowels.svelte';
+	import { formantTable, hasFormants } from './lib/vowel.ts';
 
 	const STORE = 'soundfont-designer:patch',
 		SAVED = 'soundfont-designer:saved',
@@ -64,6 +65,14 @@
 		try {
 			const file = await builder.export($state.snapshot(patch) as Patch, program);
 			download(`${slug(patch.name)}-${program}.sf3`, file, 'audio/x-soundfont');
+			// The choir app slides between its vowels with their formants, from beside the file.
+			const p = $state.snapshot(patch) as Patch;
+			if (hasFormants(p))
+				download(
+					`${slug(patch.name)}-${program}.json`,
+					JSON.stringify(formantTable(p)) + '\n',
+					'application/json'
+				);
 		} catch (e) {
 			exportError = `Export failed: ${(e as Error).message}`;
 		} finally {

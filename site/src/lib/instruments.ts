@@ -24,3 +24,10 @@ export const OWN_PROGRAMS = new Set([54, 91]);
 
 /** The soundfont file of a General MIDI program, in the soundfont/ directory of the media. */
 export const soundfontFile = (program: number) => `${program}.sf3`;
+
+/**
+ * The programs with a preset per vowel, whose formant table (see formants.ts) is beside their
+ * soundfont file, in formantFile(): the soundfont designer's export writes it.
+ */
+export const FORMANT_PROGRAMS = [91];
+export const formantFile = (program: number) => `${program}.json`;

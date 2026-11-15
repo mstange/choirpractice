@@ -8,6 +8,7 @@ import {
 	type VowelFormants
 } from './patch.ts';
 import { atKey, between } from './dsp.ts';
+import type { FormantTable } from '../../../site/src/lib/formants.ts';
 import {
 	nearest,
 	VOWEL_BANK,
@@ -263,4 +264,25 @@ export function vowelSet(p: Patch, { set = true, editing = false } = {}): VowelP
 	if (editing)
 		presets.push({ bank: EDITING_BANK, name: 'editing', formants: own, from: 'editing' });
 	return presets;
+}
+
+/**
+ * Whether the patch's bank, with its vowels if `set`, has formantTable(): a preset per vowel, at
+ * amount 1, whose vowels differ by the ratio of their cascades.
+ */
+export const hasFormants = (p: Patch, set = true) =>
+	p.vowel.amount === 1 && vowelSet(p, { set }).length > 1;
+
+/**
+ * The formants of the patch's presets per vowel, as the choir app slides between them (its
+ * formants.ts): on each register, those of each of its vowels, by bank.
+ */
+export function formantTable(p: Patch): FormantTable {
+	if (p.vowel.amount !== 1) throw new Error(`a vowel amount of ${p.vowel.amount}, not 1`);
+	return {
+		keys: [...p.registerKeys],
+		banks: LYRIC_VOWELS.map(({ ipa }) =>
+			registerFormants(vowelFormants(p, ipa).formants, p).map(roundFormants)
+		)
+	};
 }

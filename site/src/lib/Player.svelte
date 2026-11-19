@@ -398,9 +398,11 @@
 	/**
 	 * The ruler above the bars holds the loop. Dragging along it makes a loop over the measures it
 	 * covers, dragging the loop's ends or middle resizes or moves it, and tapping it turns looping
-	 * on or off. Tapping elsewhere seeks to that measure.
+	 * on or off. Tapping elsewhere seeks to that measure. Dragging to an end of the ruler scrolls
+	 * the view on.
 	 */
 	function loopRuler(el: HTMLElement) {
+		const EDGE = 24;
 		const last = measures.length - 1;
 		const xOf = (e: PointerEvent) => e.clientX - el.getBoundingClientRect().left;
 		const timeAt = (x: number) => t + (x / el.clientWidth - NOW_X) * session.barSeconds;
@@ -431,11 +433,16 @@
 				t0 = timeAt(x0),
 				mode = hit(x0, down.pointerType !== 'mouse'),
 				start = loop;
-			let moved = false;
+			let moved = false,
+				x = x0;
 			const update = (e: PointerEvent) => {
-				moved ||= Math.abs(xOf(e) - x0) > 4;
+				x = xOf(e);
+				moved ||= Math.abs(x - x0) > 4;
+				drag();
+			};
+			const drag = () => {
 				if (!moved || pinching) return;
-				const time = timeAt(xOf(e));
+				const time = timeAt(x);
 				if (mode === 'new' || !start) {
 					const [a, b] = [measureAt(t0), measureAt(time)];
 					loop = { from: Math.min(a, b), to: Math.max(a, b) + 1, on: true };
@@ -448,9 +455,30 @@
 					loop = { ...start, from: start.from + d, to: start.to + d };
 				}
 			};
+			// Near or past an end of the ruler, the view scrolls on, faster the further out the
+			// pointer is, so that a loop can be longer than the view. Playback holds meanwhile.
+			let holding = false,
+				last = performance.now(),
+				raf = requestAnimationFrame(function scroll(now) {
+					const w = el.clientWidth,
+						depth = x < EDGE ? x - EDGE : x > w - EDGE ? x - (w - EDGE) : 0,
+						dt = Math.min(now - last, 100) / 1000;
+					last = now;
+					const scrolling =
+						moved && !pinching && depth !== 0 && (depth < 0 ? t > 0 : t < synth.duration);
+					if (scrolling !== holding) (holding = scrolling) ? synth.hold() : synth.release();
+					if (scrolling) {
+						const speed = Math.max(-3, Math.min(depth / EDGE, 3)) * 0.5 * session.barSeconds;
+						seek(t + speed * dt);
+						drag();
+					}
+					raf = requestAnimationFrame(scroll);
+				});
 			const done = new AbortController();
 			const end = (e: PointerEvent) => {
 				done.abort();
+				cancelAnimationFrame(raf);
+				if (holding) synth.release();
 				if (moved || pinching || e.type !== 'pointerup') return;
 				if (mode === 'new' || !start) seek(measures[measureAt(timeAt(xOf(e)))]);
 				else loop = { ...start, on: !start.on };

@@ -14,6 +14,7 @@ export class Session {
 	#barSeconds = $state(Number(globalThis.localStorage?.getItem('barSeconds') ?? 10));
 	// Choir Aahs.
 	#vocalProgram = $state(Number(globalThis.localStorage?.getItem('vocalProgram') ?? 52));
+	#metronome = $state(globalThis.localStorage?.getItem('metronome') === 'true');
 	#emphasis: [number, number] = $state(
 		JSON.parse(globalThis.localStorage?.getItem('emphasis') ?? '[0.2, 0.95]')
 	);
@@ -50,6 +51,15 @@ export class Session {
 	set vocalProgram(value: number) {
 		this.#vocalProgram = value;
 		localStorage.setItem('vocalProgram', String(value));
+	}
+
+	/** Whether a metronome clicks on the beats. Kept across visits. */
+	get metronome() {
+		return this.#metronome;
+	}
+	set metronome(value: boolean) {
+		this.#metronome = value;
+		localStorage.setItem('metronome', String(value));
 	}
 
 	/** Seconds of music across the Pitch view. Kept across visits. */

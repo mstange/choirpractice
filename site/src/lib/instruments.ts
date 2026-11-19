@@ -15,6 +15,9 @@ export const INSTRUMENTS: [program: number, label: string][] = [
 	[19, 'Church Organ']
 ];
 
+/** The General MIDI program of the metronome's clicks: Woodblock. */
+export const METRONOME = 115;
+
 /**
  * The programs whose soundfont file in media/soundfont/ is not cut from MS Basic but checked in as
  * it is: 54, Practice Synth, is a synthesized voice made for this page, and 91, Choir Vowels, a

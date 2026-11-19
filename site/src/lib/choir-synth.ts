@@ -1,4 +1,4 @@
-import { FORMANT_PROGRAMS, formantFile, soundfontFile } from './instruments.ts';
+import { FORMANT_PROGRAMS, METRONOME, formantFile, soundfontFile } from './instruments.ts';
 import { sing } from './singing.ts';
 import { Synth, type Score } from './synth.svelte.ts';
 import type { MidiReply } from './synth-worker.ts';
@@ -21,10 +21,14 @@ const channelPrograms = (parts: Part[], midi: Map<number, number>, vocalProgram:
 		)
 	);
 
-/** The programs that a piece plays, including the piano that doubles its vocal parts. */
+/**
+ * The programs that a piece plays, including the piano that doubles its vocal parts and the
+ * metronome.
+ */
 export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProgram: number) {
 	const used = new Set(channelPrograms(parts, midi, vocalProgram).values());
 	if (parts.some((p) => p.vocal && p.channels.length)) used.add(PIANO);
+	used.add(METRONOME);
 	return used;
 }
 /**
@@ -32,6 +36,11 @@ export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProg
  * in the range from 32 to 100, since a soft piano note is hard to hear beside a choir sound.
  */
 const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32)) / 128) : 0);
+
+/** The metronome's clicks: key and velocity on downbeats and on the other beats, and length. */
+const DOWNBEAT = [84, 110];
+const BEAT = [77, 85];
+const CLICK = 0.05;
 
 /**
  * Plays a piece's score.mid, each part on its MIDI channels, with the vocal parts on an instrument
@@ -41,6 +50,9 @@ const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32))
  * which stays silent until setPianoGain(). The vocal parts sing their melismas legato (see
  * singing.ts); the piano strikes every note. The instruments with a preset per vowel slide from
  * one vowel to another with their formant tables (FORMANT_PROGRAMS).
+ *
+ * A metronome clicks on every beat, higher on downbeats, on a channel of its own, which stays
+ * silent until setMetronomeGain().
  */
 export class ChoirSynth extends Synth {
 	#parts: Part[];
@@ -53,15 +65,22 @@ export class ChoirSynth extends Synth {
 	 */
 	#vocal: number[];
 	#vocalProgram: number;
+	/** The beats, each with whether it is a downbeat, and the metronome's channel. */
+	#beats: [t: number, down: boolean][];
+	#metronome: number;
 
 	constructor(
 		parts: Part[],
 		voices: Voice[],
-		duration: number,
+		measures: number[],
+		beats: number[],
 		soundfontUrl: (file: string) => string,
 		vocalProgram: number
 	) {
+		const duration = measures[measures.length - 1];
 		super(duration, (program) => soundfontUrl(soundfontFile(program)));
+		const downbeats = new Set(measures);
+		this.#beats = beats.filter((t) => t < duration).map((t) => [t, downbeats.has(t)]);
 		this.#parts = parts;
 		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
@@ -81,6 +100,8 @@ export class ChoirSynth extends Synth {
 			if (next % 16 === 9) next++;
 			this.#pianos.set(name, next++);
 		}
+		if (next % 16 === 9) next++;
+		this.#metronome = next;
 	}
 
 	protected arrange({ events, notes, programs }: MidiReply): Score {
@@ -108,8 +129,20 @@ export class ChoirSynth extends Synth {
 				.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
 		);
 		sing(doubled, notes, this.#parts, this.#voices);
+		for (const [t, down] of this.#beats) {
+			const [key, vel] = down ? DOWNBEAT : BEAT,
+				offset = this.#metronome;
+			doubled.push(
+				{ t, data: [0x90, key, vel], offset },
+				{ t: t + CLICK, data: [0x80, key, 0], offset }
+			);
+			notes.push({ t0: t, t1: t + CLICK, ch: offset, key, vel });
+		}
+		// sing() leaves the events in order; Array.sort() is stable, so it keeps theirs.
+		doubled.sort((a, b) => a.t - b.t);
 		const played = channelPrograms(this.#parts, programs, this.#vocalProgram);
 		for (const ch of this.#pianos.values()) played.set(ch, PIANO);
+		if (this.#beats.length) played.set(this.#metronome, METRONOME);
 		return { events: doubled, notes, programs: played };
 	}
 
@@ -135,5 +168,9 @@ export class ChoirSynth extends Synth {
 	setPianoGain(part: string, gain: number) {
 		const ch = this.#pianos.get(part);
 		if (ch !== undefined) this.setChannelGain(ch, gain);
+	}
+
+	setMetronomeGain(gain: number) {
+		this.setChannelGain(this.#metronome, gain);
 	}
 }

@@ -1,12 +1,12 @@
 // Writes media/soundfont/<program>.sf3: MuseScore's MS Basic soundfont, one file per General MIDI
 // program, for every program that a piece in media/ plays (its score.mid) or that the instrument
-// menu offers, except for OWN_PROGRAMS, whose files are checked in. The samples keep their Ogg Vorbis
+// menu offers, and the metronome's, except for OWN_PROGRAMS, whose files are checked in. The samples keep their Ogg Vorbis
 // compression. Run by tools/build.sh.
 //
 // Usage: node site/scripts/soundfont.ts
 import { copyFileSync, globSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core';
-import { INSTRUMENTS, OWN_PROGRAMS, soundfontFile } from '../src/lib/instruments.ts';
+import { INSTRUMENTS, METRONOME, OWN_PROGRAMS, soundfontFile } from '../src/lib/instruments.ts';
 import { parseMidi } from '../src/lib/midi.ts';
 
 const SOURCE =
@@ -19,7 +19,7 @@ const read = (path: string) => {
 	return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 };
 
-const programs = new Set(INSTRUMENTS.map(([p]) => p));
+const programs = new Set([...INSTRUMENTS.map(([p]) => p), METRONOME]);
 for (const path of globSync(`${media}*/*/score.mid`)) {
 	const { programs: played } = parseMidi(read(path));
 	// Channel 10 plays drum kits, which the page doesn't load.

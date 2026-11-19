@@ -33,7 +33,7 @@
 		session: Session;
 	} = $props();
 	// svelte-ignore state_referenced_locally
-	const { voices, parts, measures, engravings } = piece;
+	const { voices, parts, measures, engravings, beats = [] } = piece;
 	// svelte-ignore state_referenced_locally
 	const fileUrl = (file: string) => mediaUrl(season, `${entry.slug}/${file}`);
 
@@ -44,6 +44,7 @@
 	const HOLD_MS = 300; // a press of Just me that lasts longer is a hold, not a tap
 	const SELECTED_BOOST = 0.5; // how much louder the selected parts get at full emphasis
 	const PIANO_BOOST = 1.5; // how much louder the piano that doubles them gets at full emphasis
+	const METRONOME_GAIN = 1;
 	const VIEWS: { id: View; label: string }[] = [
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
@@ -56,7 +57,8 @@
 	const synth = new ChoirSynth(
 		parts,
 		voices,
-		measures[measures.length - 1],
+		measures,
+		beats,
 		(file) => mediaUrl('soundfont', file),
 		// svelte-ignore state_referenced_locally
 		session.vocalProgram
@@ -189,6 +191,8 @@
 			if (vocal) synth.setPianoGain(name, piano ? pianoGain : 0);
 		}
 	});
+
+	$effect(() => synth.setMetronomeGain(session.metronome ? METRONOME_GAIN : 0));
 
 	onMount(() => {
 		synth.load(fileUrl('score.mid'));
@@ -582,6 +586,8 @@
 			loop = { ...loop, on: !loop.on };
 		} else if ((e.key === 'j' || e.key === 'J') && !e.repeat) {
 			pressJustMe();
+		} else if ((e.key === 'k' || e.key === 'K') && beats.length) {
+			session.metronome = !session.metronome;
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
@@ -979,6 +985,15 @@
 					<input type="checkbox" bind:checked={session.extraPiano} />
 					Extra Piano
 				</label>
+				{#if beats.length}
+					<label
+						class="check"
+						title="Clicks on every beat, higher on the first of each measure (K)"
+					>
+						<input type="checkbox" bind:checked={session.metronome} />
+						Metronome
+					</label>
+				{/if}
 				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
 					>Mic delay</label
 				>

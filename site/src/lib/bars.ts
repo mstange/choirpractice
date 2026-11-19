@@ -54,8 +54,8 @@ interface VoiceLayout {
 }
 
 // Voices often sing in unison: selected voices are filled bars on top, and the others are slightly
-// larger outlines, so they stay visible around them. Selected voices that coincide simply cover
-// each other.
+// larger, faint outlines, so they stay visible around them but recede behind them. Selected voices
+// that coincide simply cover each other.
 function barLayout(voices: Voice[], selected: Set<string>, step: number): VoiceLayout[] {
 	const barH = Math.min(18, step * 0.8);
 	return voices.map((v, i) => {
@@ -66,7 +66,7 @@ function barLayout(voices: Voice[], selected: Set<string>, step: number): VoiceL
 			barH: barH + grow,
 			grow,
 			outline: !dom,
-			alpha: dom ? 1 : 0.8,
+			alpha: dom ? 1 : 0.5,
 			lyrics: dom,
 			z: dom ? 1 + i : 0
 		};
@@ -136,7 +136,7 @@ function drawMusic(
 			notes = V.v.notes,
 			h = V.barH;
 		g.fillStyle = g.strokeStyle = color;
-		g.lineWidth = 2;
+		g.lineWidth = V.outline ? 1.5 : 2;
 		notes.forEach((n, i) => {
 			if (n.t1 < s0 || n.t0 > s1) return;
 			const [x0, x1] = noteX(V, n, X),
@@ -156,13 +156,13 @@ function drawMusic(
 				g.lineTo(X(next.t0) - V.grow / 2 + h / 2, y(next.p));
 				g.stroke();
 			}
-			g.globalAlpha = V.alpha * (V.outline ? 0.45 : 0.28);
+			g.globalAlpha = V.alpha * (V.outline ? 0.45 : 0.5);
 			roundRect(g, x0, top, x1 - x0, h, V.outline);
 			if (past) {
 				g.globalAlpha = V.alpha;
 				if (V.outline) {
 					roundRect(g, x0, top, x1 - x0, h, true);
-					g.globalAlpha = 0.15;
+					g.globalAlpha = 0.06;
 				}
 				roundRect(g, x0, top, x1 - x0, h);
 			}

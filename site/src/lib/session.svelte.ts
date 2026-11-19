@@ -1,4 +1,5 @@
 import { Mic } from './mic.svelte.ts';
+import { norm, voiceType } from './colors.ts';
 
 /** What carries over from one piece to the next, and what each piece keeps across visits. */
 export class Session {
@@ -89,20 +90,7 @@ export type Saved = {
 	speed: number;
 };
 
-const norm = (name: string) =>
-	name
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, ' ')
-		.trim();
 const base = (name: string) => norm(name).replace(/\d+/g, '').trim();
-const TYPES: [RegExp, string][] = [
-	[/sop/, 'soprano'],
-	[/alt/, 'alto'],
-	[/ten/, 'tenor'],
-	[/bass|bari/, 'bass']
-];
-const voiceType = (name: string) => TYPES.find(([re]) => re.test(norm(name)))?.[1];
-
 /**
  * The part among `names` that corresponds to the part `name` of another piece: the same name, else
  * the first of the same name without its number ("Tenor 2" → "Tenor", "Tenor" → "Tenor 1"), else

@@ -57,6 +57,11 @@ export interface PieceData {
 	voices: Voice[];
 	/** Start time of each measure, plus the end time of the last one. */
 	measures: number[];
+	/**
+	 * Start time of every beat of the time signature; those at a measure's start are downbeats.
+	 * Missing in pieces built before it was added.
+	 */
+	beats?: number[];
 	engravings: Engraving[];
 }
 

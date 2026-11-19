@@ -163,24 +163,44 @@ def time_map(mid_path, root, mscx):
     return to_sec
 
 
+def beat_offsets(beats, beat_type):
+    """The beats of a bar of this time signature, as offsets from its start in quarter notes: one
+    per group of an additive meter ("3+2"), per dotted beat of a compound one (6/8, 9/8, 12/8), and
+    otherwise per beat unit."""
+    unit = Fraction(4, beat_type)
+    groups = [int(b) for b in beats.split("+")]
+    if len(groups) == 1 and beat_type >= 8 and groups[0] % 3 == 0 and groups[0] > 3:
+        groups = [3] * (groups[0] // 3)
+    elif len(groups) == 1:
+        groups = [1] * groups[0]
+    offsets, pos = [], Fraction(0)
+    for g in groups:
+        offsets.append(pos)
+        pos += g * unit
+    return offsets, pos
+
+
 def parse_part(part):
-    """Returns (events, measure_starts, onsets) with positions in quarter notes.
+    """Returns (events, measure_starts, onsets, beats) with positions in quarter notes.
 
     events: list of (start, duration, lyrics, notes, bar, in_slur) for voice 1 of the part's first
     staff, where lyrics is None for rests and otherwise a list of (number, syllabic, text), notes is
     a list of (midi_pitch, tied_to_next), bar is the measure number, and in_slur tells whether a
     slur started on an earlier note covers this one. onsets holds the start of every note and rest
-    in any staff or voice of the part.
+    in any staff or voice of the part. beats holds the start of every beat of the time signature;
+    in a first measure shorter than a bar, a pickup, they count back from its end.
     """
-    events, measures, slurs, onsets = [], [], set(), set()
-    mstart, divisions = Fraction(0), 1
+    events, measures, slurs, onsets, beats = [], [], set(), set(), []
+    mstart, divisions, meter = Fraction(0), 1, ([Fraction(0)], Fraction(4))
     for measure in part.findall("measure"):
         bar = measure.get("number")
         measures.append(mstart)
         pos = mlen = Fraction(0)
         for el in measure:
-            if el.tag == "attributes" and el.find("divisions") is not None:
-                divisions = int(el.findtext("divisions"))
+            if el.tag == "attributes":
+                divisions = int(el.findtext("divisions") or divisions)
+                if (t := el.find("time")) is not None and t.find("beats") is not None:
+                    meter = beat_offsets(t.findtext("beats"), int(t.findtext("beat-type")))
             elif el.tag == "backup":
                 pos -= Fraction(int(el.findtext("duration")), divisions)
             elif el.tag == "forward":
@@ -224,9 +244,12 @@ def parse_part(part):
                     if s.get("line-type", "solid") != "solid":
                         continue
                     (slurs.add if s.get("type") == "start" else slurs.discard)(s.get("number", "1"))
+        offsets, bar = meter
+        shift = bar - mlen if mstart == 0 and mlen < bar else 0
+        beats += [mstart + o - shift for o in offsets if 0 <= o - shift < mlen]
         mstart += mlen
     measures.append(mstart)
-    return sorted(events, key=lambda e: e[0]), measures, onsets
+    return sorted(events, key=lambda e: e[0]), measures, onsets, beats
 
 
 def part_channels(root, mid_path):
@@ -287,9 +310,10 @@ def main():
     result = {"title": title, "subtitle": subtitle, "credits": by, "parts": [], "voices": []}
     for part in root.findall("part"):
         name = names[part.get("id")]
-        events, measures, _ = parse_part(part)
+        events, measures, _, beats = parse_part(part)
         if "measures" not in result:
             result["measures"] = [to_sec(m) for m in measures]
+            result["beats"] = [to_sec(b) for b in beats]
         vocal = any(e[2] for e in events)
         result["parts"].append({"name": name, "channels": channels[part.get("id")], "vocal": vocal})
         if not vocal:

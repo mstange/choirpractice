@@ -58,10 +58,10 @@ export interface PieceData {
 	/** Start time of each measure, plus the end time of the last one. */
 	measures: number[];
 	/**
-	 * Start time of every beat of the time signature; those at a measure's start are downbeats.
-	 * Missing in pieces built before it was added.
+	 * The clicks of MuseScore's metronome: the time of each, and 1 for a downbeat. Missing in
+	 * pieces built before it was added.
 	 */
-	beats?: number[];
+	beats?: [t: number, downbeat: 0 | 1][];
 	engravings: Engraving[];
 }
 

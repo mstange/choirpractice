@@ -1,4 +1,10 @@
-import { FORMANT_PROGRAMS, METRONOME, formantFile, soundfontFile } from './instruments.ts';
+import {
+	FORMANT_PROGRAMS,
+	METRONOME,
+	METRONOME_KEYS,
+	formantFile,
+	soundfontFile
+} from './instruments.ts';
 import { sing } from './singing.ts';
 import { Synth, type Score } from './synth.svelte.ts';
 import type { MidiReply } from './synth-worker.ts';
@@ -37,9 +43,8 @@ export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProg
  */
 const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32)) / 128) : 0);
 
-/** The metronome's clicks: key and velocity on downbeats and on the other beats, and length. */
-const DOWNBEAT = [84, 110];
-const BEAT = [77, 85];
+/** The velocity of the metronome's clicks, mf like MuseScore's, and their length. */
+const CLICK_VELOCITY = 80;
 const CLICK = 0.05;
 
 /**
@@ -51,7 +56,7 @@ const CLICK = 0.05;
  * singing.ts); the piano strikes every note. The instruments with a preset per vowel slide from
  * one vowel to another with their formant tables (FORMANT_PROGRAMS).
  *
- * A metronome clicks on every beat, higher on downbeats, on a channel of its own, which stays
+ * A metronome clicks on the beats, as MuseScore's does, on a channel of its own, which stays
  * silent until setMetronomeGain().
  */
 export class ChoirSynth extends Synth {
@@ -65,22 +70,20 @@ export class ChoirSynth extends Synth {
 	 */
 	#vocal: number[];
 	#vocalProgram: number;
-	/** The beats, each with whether it is a downbeat, and the metronome's channel. */
-	#beats: [t: number, down: boolean][];
+	/** The metronome's clicks, each with whether it is a downbeat, and its channel. */
+	#beats: [t: number, downbeat: 0 | 1][];
 	#metronome: number;
 
 	constructor(
 		parts: Part[],
 		voices: Voice[],
-		measures: number[],
-		beats: number[],
+		duration: number,
+		beats: [t: number, downbeat: 0 | 1][],
 		soundfontUrl: (file: string) => string,
 		vocalProgram: number
 	) {
-		const duration = measures[measures.length - 1];
 		super(duration, (program) => soundfontUrl(soundfontFile(program)));
-		const downbeats = new Set(measures);
-		this.#beats = beats.filter((t) => t < duration).map((t) => [t, downbeats.has(t)]);
+		this.#beats = beats.filter(([t]) => t < duration);
 		this.#parts = parts;
 		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
@@ -129,14 +132,14 @@ export class ChoirSynth extends Synth {
 				.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
 		);
 		sing(doubled, notes, this.#parts, this.#voices);
-		for (const [t, down] of this.#beats) {
-			const [key, vel] = down ? DOWNBEAT : BEAT,
+		for (const [t, downbeat] of this.#beats) {
+			const key = downbeat ? METRONOME_KEYS.downbeat : METRONOME_KEYS.beat,
 				offset = this.#metronome;
 			doubled.push(
-				{ t, data: [0x90, key, vel], offset },
+				{ t, data: [0x90, key, CLICK_VELOCITY], offset },
 				{ t: t + CLICK, data: [0x80, key, 0], offset }
 			);
-			notes.push({ t0: t, t1: t + CLICK, ch: offset, key, vel });
+			notes.push({ t0: t, t1: t + CLICK, ch: offset, key, vel: CLICK_VELOCITY });
 		}
 		// sing() leaves the events in order; Array.sort() is stable, so it keeps theirs.
 		doubled.sort((a, b) => a.t - b.t);

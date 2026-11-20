@@ -57,7 +57,7 @@
 	const synth = new ChoirSynth(
 		parts,
 		voices,
-		measures,
+		measures[measures.length - 1],
 		beats,
 		(file) => mediaUrl('soundfont', file),
 		// svelte-ignore state_referenced_locally
@@ -988,7 +988,7 @@
 				{#if beats.length}
 					<label
 						class="check"
-						title="Clicks on every beat, higher on the first of each measure (K)"
+						title="Clicks on the beats, as in MuseScore, higher on the first of each measure (K)"
 					>
 						<input type="checkbox" bind:checked={session.metronome} />
 						Metronome

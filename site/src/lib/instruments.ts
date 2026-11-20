@@ -15,8 +15,13 @@ export const INSTRUMENTS: [program: number, label: string][] = [
 	[19, 'Church Organ']
 ];
 
-/** The General MIDI program of the metronome's clicks: Woodblock. */
+/**
+ * The program of the metronome's clicks, the General MIDI Woodblock's, but its file holds the
+ * Standard drum kit's wood blocks, which MuseScore's metronome plays: the high one on downbeats
+ * and the low one on the other beats, at these keys.
+ */
 export const METRONOME = 115;
+export const METRONOME_KEYS = { downbeat: 76, beat: 77 };
 
 /**
  * The programs whose soundfont file in media/soundfont/ is not cut from MS Basic but checked in as

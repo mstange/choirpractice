@@ -4989,7 +4989,7 @@
 ],
 "file": "engraving/soprano.svg",
 "width": 40132.8,
-"height": 1273.3,
+"height": 1409.42,
 "spatium": 82.67,
 "t": [
 0.0,
@@ -5230,7 +5230,7 @@
 ],
 "file": "engraving/alto.svg",
 "width": 38756.6,
-"height": 1166.29,
+"height": 1302.4,
 "spatium": 82.67,
 "t": [
 0.0,
@@ -5449,7 +5449,7 @@
 ],
 "file": "engraving/tenor.svg",
 "width": 38436.0,
-"height": 1090.17,
+"height": 1226.29,
 "spatium": 82.67,
 "t": [
 0.0,
@@ -5664,7 +5664,7 @@
 ],
 "file": "engraving/bass.svg",
 "width": 37971.6,
-"height": 1080.72,
+"height": 1216.83,
 "spatium": 82.67,
 "t": [
 0.0,
@@ -5872,7 +5872,7 @@
 ],
 "file": "engraving/choir.svg",
 "width": 42687.7,
-"height": 6121.91,
+"height": 6258.02,
 "spatium": 82.67,
 "t": [
 0.0,

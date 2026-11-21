@@ -49,6 +49,11 @@ STYLE = {
     "showHeader": 0,
     "showFooter": 0,
     "showPageNumber": 0,
+    # A number on every measure, since the strip shows no system starts to count from.
+    "showMeasureNumber": 1,
+    "showMeasureNumberOne": 1,
+    "measureNumberSystem": 0,
+    "measureNumberInterval": 1,
 }
 for tag, value in STYLE.items():
     style, n = re.subn(rf"<{tag}>[^<]*</{tag}>", f"<{tag}>{value}</{tag}>", style)

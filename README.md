@@ -88,15 +88,15 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
 - **Media host:** an R2 bucket with public access through a custom domain such as `media.choirpractice.app`, with
   - a CORS rule that allows `GET` from the page's origin;
   - no directory listing, which is R2's default.
-- **Scores:** the `.mscz` files stay local, since the page doesn't need them, and anyone with a season's link could download them.
+- **Scores:** the `.mscz` files are uploaded with the season, though the page doesn't link to them: they are no more secret than its `piece.json` files.
 - **Season keys:** a season is uploaded under a random key instead of its name, for example from `openssl rand -hex 16 > media/<season>.key`. Keeping it in `media/` keeps it out of the repository. Whoever has the link `https://choirpractice.app/#/<key>/` can open the season, so it is meant for people who bought the sheet music. A new season gets a new key. The key is in the URL fragment, which browsers don't send to the page's host.
 - **Demo:** `media/demo` is uploaded under the name `demo`, without a key.
 - **Soundfont:** `media/soundfont` is uploaded under the name `soundfont`, for all seasons.
 - **Upload** a season with [rclone](https://rclone.org/) configured for R2. Uploads replace files under the same names, so every file is revalidated on each request:
   ```sh
   season=<season>
-  rclone sync media/$season r2:choirpractice-media/$(cat media/$season.key) --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
-  rclone sync media/demo r2:choirpractice-media/demo --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
+  rclone sync media/$season r2:choirpractice-media/$(cat media/$season.key) --header-upload "Cache-Control: no-cache"
+  rclone sync media/demo r2:choirpractice-media/demo --header-upload "Cache-Control: no-cache"
   rclone sync media/soundfont r2:choirpractice-media/soundfont --header-upload "Cache-Control: no-cache"
   ```
 - **Page:** `cd site && npm run deploy` builds the page and the soundfont designer with `VITE_MEDIA_BASE` set to the media host and uploads `site/build/` with `wrangler deploy`, as configured in `site/wrangler.jsonc`. The live page is whatever is in the working copy. Any other static host works too: build with `VITE_MEDIA_BASE=https://<media host> npm run build` and upload `site/build/`.

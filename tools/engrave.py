@@ -54,6 +54,9 @@ STYLE = {
     "showMeasureNumberOne": 1,
     "measureNumberSystem": 0,
     "measureNumberInterval": 1,
+    # A multi-measure rest has no segments of its own in the .spos, and the cursor should move through
+    # the measures it stands for.
+    "createMultiMeasureRests": 0,
 }
 for tag, value in STYLE.items():
     style, n = re.subn(rf"<{tag}>[^<]*</{tag}>", f"<{tag}>{value}</{tag}>", style)

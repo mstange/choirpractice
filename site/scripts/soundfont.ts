@@ -18,6 +18,10 @@ import {
 } from '../src/lib/instruments.ts';
 import { parseMidi } from '../src/lib/midi.ts';
 
+// The source's creation date has no time zone, so spessasynth reads it as local time; reading it as
+// UTC writes the same files on every machine.
+process.env.TZ = 'UTC';
+
 const SOURCE =
 	process.env.SOUNDFONT ?? '/Applications/MuseScore 4.app/Contents/Resources/sound/MS Basic.sf3';
 const media = new URL('../../media/', import.meta.url).pathname;

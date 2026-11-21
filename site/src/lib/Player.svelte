@@ -49,6 +49,8 @@
 		{ id: 'pitch', label: 'Pitch' },
 		{ id: 'lyrics', label: 'Lyrics' }
 	];
+	// The score's copyright notice, such as a license's, split so that its links can be followed.
+	const copyright = $derived((piece.copyright ?? '').split(/(https?:\/\/\S+)/));
 	const voiceNames = voices.map((v) => v.name);
 	const colors = assignColors(voices);
 	const accompaniment = parts.filter((p) => !p.vocal).map((p) => p.name);
@@ -691,6 +693,13 @@
 			<div class="credits">
 				{[piece.subtitle, piece.credits].filter(Boolean).join(' · ')}
 			</div>
+			{#if piece.copyright}
+				<div class="copyright">
+					{#each copyright as part, i (i)}
+						{#if i % 2}<a href={part} target="_blank" rel="noopener">{part}</a>{:else}{part}{/if}
+					{/each}
+				</div>
+			{/if}
 		</div>
 		<div class="segmented views" role="radiogroup" aria-label="View">
 			{#each VIEWS as v (v.id)}
@@ -1136,6 +1145,17 @@
 	}
 	.credits {
 		opacity: 0.55;
+	}
+	.copyright {
+		opacity: 0.4;
+		font-size: 11px;
+		/* A long notice wraps rather than widening the title's column, which would squeeze the piece
+		   menu beside it. */
+		contain: inline-size;
+		min-width: min(50em, 40vw);
+	}
+	.copyright a {
+		color: inherit;
 	}
 
 	.stage {

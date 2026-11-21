@@ -322,7 +322,17 @@ def main():
         for sp in root.findall("part-list/score-part")
     }
     channels = part_channels(root, mid_path)
-    result = {"title": title, "subtitle": subtitle, "credits": by, "parts": [], "voices": []}
+    # The score's copyright notice, from File › Properties; MusicXML imports leave "Copyright ©".
+    rights = (root.findtext("identification/rights") or "").strip()
+    copyright = "" if re.fullmatch(r"(Copyright)?\s*©?", rights) else rights
+    result = {
+        "title": title,
+        "subtitle": subtitle,
+        "credits": by,
+        "copyright": copyright,
+        "parts": [],
+        "voices": [],
+    }
     for part in root.findall("part"):
         name = names[part.get("id")]
         events, measures, _, clicks = parse_part(part)

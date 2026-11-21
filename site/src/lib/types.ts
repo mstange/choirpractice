@@ -53,6 +53,8 @@ export interface PieceData {
 	title: string;
 	subtitle: string;
 	credits: string;
+	/** The score's copyright notice. Missing in pieces built before it was added. */
+	copyright?: string;
 	parts: Part[];
 	voices: Voice[];
 	/** Start time of each measure, plus the end time of the last one. */

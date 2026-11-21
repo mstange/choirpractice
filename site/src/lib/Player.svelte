@@ -200,7 +200,7 @@
 		synth.load(fileUrl('score.mid'));
 		let raf = requestAnimationFrame(function frame() {
 			t = synth.now();
-			if (synth.playing && !synth.held && t >= synth.duration) synth.pause();
+			if (synth.playing && !synth.held && t >= synth.duration) pause(session.returnOnPause);
 			if (mic.active) recordMic();
 			if (view !== 'lyrics' && bars && ruler) {
 				const trace = mic.active ? micTrace : null;
@@ -276,9 +276,13 @@
 		micTrace.trail = [];
 	}
 
+	/** Where playback last started: at Play, or at a seek while playing. */
+	let playedFrom = 0;
+
 	function seek(time: number) {
 		synth.seek(time);
 		t = synth.now();
+		if (synth.playing) playedFrom = t;
 	}
 
 	/** Goes to the start of the loop while looping is on, else to the start of the piece. */
@@ -299,9 +303,17 @@
 		speed = Math.round(Math.min(Math.max(next, SPEEDS[0]), SPEEDS[1]) * 100) / 100;
 	}
 
-	function togglePlay() {
-		if (synth.playing) return synth.pause();
+	/** Pauses, and with `goBack`, goes back to where playback started. */
+	function pause(goBack: boolean) {
+		synth.pause();
+		if (goBack) seek(playedFrom);
+	}
+
+	/** Plays or pauses. `inverse` pauses the other way than Return on Pause says. */
+	function togglePlay(inverse = false) {
+		if (synth.playing) return pause(session.returnOnPause !== inverse);
 		if (loopTimes && (t < loopTimes[0] || t >= loopTimes[1])) seek(loopTimes[0]);
+		playedFrom = t;
 		synth.play();
 	}
 
@@ -571,7 +583,7 @@
 		const digit = /^Digit(\d)$/.exec(e.code)?.[1];
 		if (e.key === ' ') {
 			e.preventDefault();
-			togglePlay();
+			togglePlay(e.shiftKey);
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 			stepMeasure(e.key === 'ArrowRight' ? 1 : -1);
 		} else if (e.key === 'Home') {
@@ -775,7 +787,7 @@
 					class:waiting={synth.waiting}
 					aria-label={synth.playing ? 'Pause' : 'Play'}
 					title={synth.playing ? 'Pause (Space)' : 'Play (Space)'}
-					onclick={togglePlay}
+					onclick={() => togglePlay()}
 				>
 					<svg viewBox="0 0 16 16" aria-hidden="true">
 						{#if synth.playing}
@@ -1003,6 +1015,13 @@
 						Metronome
 					</label>
 				{/if}
+				<label
+					class="check"
+					title="Pausing goes back to where playback started. Shift+Space pauses the other way."
+				>
+					<input type="checkbox" bind:checked={session.returnOnPause} />
+					Return on Pause
+				</label>
 				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
 					>Mic delay</label
 				>

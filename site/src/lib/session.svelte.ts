@@ -15,6 +15,7 @@ export class Session {
 	// Choir Aahs.
 	#vocalProgram = $state(Number(globalThis.localStorage?.getItem('vocalProgram') ?? 52));
 	#metronome = $state(globalThis.localStorage?.getItem('metronome') === 'true');
+	#returnOnPause = $state(globalThis.localStorage?.getItem('returnOnPause') === 'true');
 	#emphasis: [number, number] = $state(
 		JSON.parse(globalThis.localStorage?.getItem('emphasis') ?? '[0.2, 0.95]')
 	);
@@ -60,6 +61,15 @@ export class Session {
 	set metronome(value: boolean) {
 		this.#metronome = value;
 		localStorage.setItem('metronome', String(value));
+	}
+
+	/** Whether pausing goes back to where playback started. Kept across visits. */
+	get returnOnPause() {
+		return this.#returnOnPause;
+	}
+	set returnOnPause(value: boolean) {
+		this.#returnOnPause = value;
+		localStorage.setItem('returnOnPause', String(value));
 	}
 
 	/** Seconds of music across the Pitch view. Kept across visits. */

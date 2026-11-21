@@ -106,10 +106,12 @@ interface Voice {
 
 /**
  * A voice's gain going from `gain` to silence, or from silence to `gain`, in the legato: at equal
- * power, or, between two voices that play the same, at equal gain.
+ * power, or, between two voices that play the same, at equal gain. `voiceStart` is the voice's
+ * start time, which tells whether spessasynth has since given the voice to another note.
  */
 type Fade = {
 	voice: Voice;
+	voiceStart: number;
 	gain: number;
 	start: number;
 	seconds: number;
@@ -329,6 +331,7 @@ export class Engine {
 		const twins = new Set<Voice>(),
 			fadeOf = (voice: Voice, out: boolean, power: boolean): Fade => ({
 				voice,
+				voiceStart: voice.startTime,
 				gain: voice.gainModifier,
 				start: now,
 				seconds: fade,
@@ -372,10 +375,15 @@ export class Engine {
 		return voices.filter((v) => v.isActive && !before.has(v));
 	}
 
-	/** Moves the legato's gains on. A voice that has faded out ends. */
+	/**
+	 * Moves the legato's gains on. A voice that has faded out ends. A voice can also end before its
+	 * fade does, such as one of a sample without a loop that advance() moved past its end, and
+	 * spessasynth then gives it to the next note that starts, which its fade mustn't touch.
+	 */
 	#fade() {
 		const now = this.synth.currentTime;
 		this.#fades = this.#fades.filter((f) => {
+			if (!f.voice.isActive || f.voice.startTime !== f.voiceStart) return false;
 			const x = Math.min(1, (now - f.start) / f.seconds),
 				y = f.out ? 1 - x : x;
 			f.voice.gainModifier = f.gain * (f.power ? Math.sin((y * Math.PI) / 2) : y);

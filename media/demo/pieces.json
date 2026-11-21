@@ -21,6 +21,11 @@
         ["Cu", 30],
         ["es", 280]
       ]
+    },
+    {
+      "slug": "locus-iste",
+      "label": "Locus iste (Bruckner)",
+      "languages": [["", "la"]]
     }
   ]
 }

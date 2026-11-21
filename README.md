@@ -15,11 +15,12 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 
 - `media/<season>/`: the data of a season's pieces. It is not checked in (see `.gitignore`), except for `media/demo/`.
   - `pieces.json` has the season's title, shown on the season page and the start page, and lists the pieces offered in the piece menu: `{ "title": "Winter 2026", "pieces": [...] }`.
-  - `<slug>/` holds the data of one piece, written by `tools/build.sh`.
-  - `media/demo/` is a season of public-domain pieces, so that the page works without a licensed score: Frère Jacques as a round in four parts, and Mozart's Ave verum corpus for SATB choir and piano. Their scores are `media/demo/<slug>.mscz`; rebuild one with `tools/build.sh media/demo/<slug>.mscz demo/<slug>`. The start page links to `#/demo/frere-jacques` and `#/demo/ave-verum-corpus`.
+  - `<slug>/` holds the data of one piece, written by `tools/build.sh`, and `<slug>.mscz` the score it was built from, which `build.sh` copies there.
+  - `media/demo/` is a season of public-domain pieces, so that the page works without a licensed score: Frère Jacques as a round in four parts, and Mozart's Ave verum corpus for SATB choir and piano. The start page links to `#/demo/frere-jacques` and `#/demo/ave-verum-corpus`.
 - `media/soundfont/`: one soundfont file per General MIDI program, `<program>.sf3`, for every program that a piece plays or that the instrument menu offers, and the metronome's file, `115.sf3`, the high and low wood block of MS Basic's Standard drum kit, cut from MuseScore's MS Basic soundfont, with its license, except for `54.sf3`, the Practice Synth voice made for this page, and `91.sf3`, Choir Vowels, the soundfont designer's Recorded Choir with a preset per vowel (`OWN_PROGRAMS` in `src/lib/instruments.ts`), with `91.json`, the formants of its vowels (see Formant slides). It is checked in, and is shared by all seasons.
 - `soundfont-designer/`: a page for designing an instrument for the vocal parts as a SoundFont file, such as Practice Synth, while listening to it in the pieces; see its README. It plays with the choir app's synthesizer and offers the pieces of the seasons that the choir app opened. `npm run build` in `site/` builds it into `site/build/soundfont-designer/`, so it is served at `choirpractice.app/soundfont-designer/`. Run `npm install` in it once.
-- `tools/build.sh <score.mscz> <season>/<slug>`: the whole pipeline for one score. It writes `media/<season>/<slug>/piece.json`, `media/<season>/<slug>/score.mid`, MuseScore's MIDI export, which the page plays, and `media/<season>/<slug>/engraving/<name>.svg`, the sheet music. Then it runs `site/scripts/soundfont.ts`.
+- `tools/build.sh <score.mscz> <season>/<slug>`: the whole pipeline for one score. It writes `media/<season>/<slug>/piece.json`, `media/<season>/<slug>/score.mid`, MuseScore's MIDI export, which the page plays, and `media/<season>/<slug>/engraving/<name>.svg`, the sheet music. Then it runs `site/scripts/soundfont.ts`, and keeps a copy of the score as `media/<season>/<slug>.mscz`.
+- `tools/rebuild.sh [season...]`: runs `build.sh` again on every `media/<season>/<slug>.mscz` of the given seasons, or of all seasons, such as after a change to the tools.
 - `tools/extract.py`: reads MuseScore's MusicXML and MIDI exports and writes `piece.json`, which holds:
   - title, subtitle, credits, from the score's title frame (the MusicXML export leaves it out), with text set in capitals put in title case, or else from its metadata in File › Properties;
   - measure start times, and the clicks of MuseScore's metronome (see Metronome);
@@ -41,11 +42,11 @@ The pieces come in **seasons**: a season is a directory with a `pieces.json` and
 
 ## Adding a piece
 
-1. **Build.** Copy the downloaded `.mscz` somewhere neutral first if you like; the script only reads it. Run:
+1. **Build.** Run:
    ```sh
    tools/build.sh "/path/to/Score.mscz" my-season/my-slug
    ```
-   It fails if the score's staves don't map onto the MIDI file's tracks, or if a part plays percussion. It prints syllable and note counts per vocal part. "unsung notes" should be 0. If it isn't, notes without lyrics are following a rest, which usually means a lyric is missing in the score. "lyrics on tied notes" counts lyrics placed on the continuation of a tie, which the score probably meant as a slur. Each of them starts a new bar. Below each part's counts it lists suspicious spots by bar number, for checking in MuseScore:
+   It copies the score to `media/my-season/my-slug.mscz`, so a later rebuild needs only `tools/rebuild.sh my-season`; to change the score, edit that copy and rebuild. It fails if the score's staves don't map onto the MIDI file's tracks, or if a part plays percussion. It prints syllable and note counts per vocal part. "unsung notes" should be 0. If it isn't, notes without lyrics are following a rest, which usually means a lyric is missing in the score. "lyrics on tied notes" counts lyrics placed on the continuation of a tie, which the score probably meant as a slur. Each of them starts a new bar. Below each part's counts it lists suspicious spots by bar number, for checking in MuseScore:
    - a lyric on the continuation of a tie;
    - a lyric inside a solid slur that started on an earlier note (dashed and dotted slurs, which often mean "don't breathe", are ignored);
    - a note without a lyric after a rest;
@@ -87,13 +88,14 @@ The page and the media are hosted separately on Cloudflare: the page as a Worker
 - **Media host:** an R2 bucket with public access through a custom domain such as `media.choirpractice.app`, with
   - a CORS rule that allows `GET` from the page's origin;
   - no directory listing, which is R2's default.
+- **Scores:** the `.mscz` files stay local, since the page doesn't need them, and anyone with a season's link could download them.
 - **Season keys:** a season is uploaded under a random key instead of its name, for example from `openssl rand -hex 16 > media/<season>.key`. Keeping it in `media/` keeps it out of the repository. Whoever has the link `https://choirpractice.app/#/<key>/` can open the season, so it is meant for people who bought the sheet music. A new season gets a new key. The key is in the URL fragment, which browsers don't send to the page's host.
 - **Demo:** `media/demo` is uploaded under the name `demo`, without a key.
 - **Soundfont:** `media/soundfont` is uploaded under the name `soundfont`, for all seasons.
 - **Upload** a season with [rclone](https://rclone.org/) configured for R2. Uploads replace files under the same names, so every file is revalidated on each request:
   ```sh
   season=<season>
-  rclone sync media/$season r2:choirpractice-media/$(cat media/$season.key) --header-upload "Cache-Control: no-cache"
+  rclone sync media/$season r2:choirpractice-media/$(cat media/$season.key) --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
   rclone sync media/demo r2:choirpractice-media/demo --exclude '*.mscz' --header-upload "Cache-Control: no-cache"
   rclone sync media/soundfont r2:choirpractice-media/soundfont --header-upload "Cache-Control: no-cache"
   ```

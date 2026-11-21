@@ -4,7 +4,7 @@
 !/media/demo/
 !/media/soundfont/
 
-# MuseScore sources and intermediate exports, if copied here for building
+# MuseScore sources (media/<season>/<slug>.mscz, copied there by tools/build.sh) and intermediate exports
 *.mscz
 !/media/demo/*.mscz
 *.mscx

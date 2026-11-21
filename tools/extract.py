@@ -22,7 +22,7 @@ SMALL_WORDS = set("a an and as at but by for in nor of on or the to with".split(
 
 
 def title_case(text):
-    """Title frames are often set in capitals, which the page shouldn't shout; text in
+    """Title frames and part names are often set in capitals, which the page shouldn't shout; text in
     mixed case is left as written. Roman numerals stay in capitals."""
     if not text.isupper():
         return text
@@ -317,7 +317,10 @@ def main():
     mscx = next(Path(src).glob("*.mscx")).read_text()
     to_sec = time_map(mid_path, root, mscx)
     title, subtitle, by = credits(root, mscx)
-    names = {sp.get("id"): sp.findtext("part-name") for sp in root.findall("part-list/score-part")}
+    names = {
+        sp.get("id"): title_case(sp.findtext("part-name"))
+        for sp in root.findall("part-list/score-part")
+    }
     channels = part_channels(root, mid_path)
     result = {"title": title, "subtitle": subtitle, "credits": by, "parts": [], "voices": []}
     for part in root.findall("part"):

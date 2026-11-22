@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Node.js dependencies of tools/mscore.mjs",
+  "type": "module",
+  "dependencies": {
+    "score-converter": "file:../../score-converter"
+  }
+}

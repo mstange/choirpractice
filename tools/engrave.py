@@ -1,9 +1,9 @@
 """Engrave the vocal parts as single long lines of sheet music, with the x position of every note.
 
-Usage: engrave.py mscore score.mscz extracted_mscz_dir score.musicxml score.mid piece.json workdir
+Usage: engrave.py score.mscz extracted_mscz_dir score.musicxml score.mid piece.json workdir
 Writes one variant of the score per vocal part with every other part hidden, plus a "choir" variant
 with all vocal parts (when there are two to MAX_CHOIR of them), each laid out as one system on a very wide page.
-MuseScore exports each as a trimmed SVG and as segment positions (.spos), which give the x position
+MuseScore (its WebAssembly build, by mscore.mjs) exports each as a trimmed SVG and as segment positions (.spos), which give the x position
 of every chord or rest; the times come from the .spos of the unchanged score, and the MusicXML and
 MIDI exports tell which of those belong to the shown parts. Writes <piece dir>/engraving/<name>.svg
 and adds an "engravings" entry to piece.json.
@@ -15,10 +15,9 @@ import xml.etree.ElementTree as ET
 sys.path.append(str(pathlib.Path(__file__).parent))
 from extract import parse_part, time_map
 
-mscore, score, src, xml_path, mid_path, piece_path, work = (
-    sys.argv[1],
-    *map(pathlib.Path, sys.argv[2:8]),
-)
+score, src, xml_path, mid_path, piece_path, work = map(pathlib.Path, sys.argv[1:7])
+MSCORE = pathlib.Path(__file__).with_name("mscore.mjs")
+mscore = lambda score, *outputs: subprocess.run(["node", MSCORE, score, *outputs], check=True)
 piece = json.loads(piece_path.read_text())
 out = piece_path.parent / "engraving"
 mscx_path = next(src.glob("*.mscx"))
@@ -36,7 +35,7 @@ onsets = [
 # it on the same beat, so a variant's .spos times can be later than the audio's.
 # The variants have the same segments as the unchanged score, whose .spos times match the MIDI.
 read_times = lambda spos: dict(re.findall(r'<event elid="(\d+)" position="(\d+)"', spos))
-subprocess.run([mscore, "-o", work / "score.spos", score], check=True, capture_output=True)
+mscore(score, work / "score.spos")
 times = read_times((work / "score.spos").read_text())
 
 STYLE = {
@@ -87,8 +86,7 @@ def engrave(name, shown):
         variant.with_suffix(".mscz")
     )
     # The trimmed SVG is shifted against the page coordinates of the .spos; the untrimmed one gives the shift.
-    for args, dst in [([], "page.svg"), (["-T", "0"], "trim.svg"), ([], "x.spos")]:
-        subprocess.run([mscore, *args, "-o", variant / dst, score], check=True, capture_output=True)
+    mscore(score, variant / "page.svg", variant / "x.spos", "-T", "0", variant / "trim.svg")
     pages = sorted(variant.glob("page-*.svg"))
     assert len(pages) == 1, f"{name}: {len(pages)} pages"
     page, trim = pages[0].read_text(), (variant / "trim-1.svg").read_text()

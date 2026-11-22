@@ -17,3 +17,5 @@ __pycache__/
 
 # Local test tooling (Playwright and scripts)
 /.dev/
+
+node_modules/

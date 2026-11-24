@@ -11,6 +11,10 @@ export type MidiReply = {
 	tracks: number[][];
 	/** Where the tempo changes: [tick, seconds, seconds per tick from there], by tick. */
 	tempos: [number, number, number][];
+	/** Where the time signature changes: [tick, numerator, denominator], by tick. */
+	timeSignatures: [number, number, number][];
+	/** Ticks per quarter note. */
+	division: number;
 	duration: number;
 };
 
@@ -68,12 +72,19 @@ export function parseMidi(buffer: ArrayBuffer): MidiReply {
 			midi.midiTicksToSeconds(tick),
 			60 / (bpm * midi.timeDivision)
 		]);
+	const timeSignatures = midi.tracks
+		.flatMap((track) => track.events)
+		.filter((e) => e.statusByte === 0x58)
+		.sort((a, b) => a.ticks - b.ticks)
+		.map((e): [number, number, number] => [e.ticks, e.data[0], 2 ** e.data[1]]);
 	return {
 		events,
 		notes,
 		programs,
 		tracks: tracks.map((s) => [...s].sort((a, b) => a - b)),
 		tempos,
+		timeSignatures,
+		division: midi.timeDivision,
 		duration: midi.duration
 	};
 }

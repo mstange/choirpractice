@@ -47,7 +47,8 @@ export type DecodedSample = { index: number; data: Float32Array };
  * context, so that the page knows the score position of every frame without being told.
  */
 export type Message =
-	| { type: 'score'; events: ScoreEvent[]; notes: ScoreNote[] }
+	/** With `at`, the score replaces the one playing at a frame, and plays from `pos` there. */
+	| ScoreMessage
 	| { type: 'bank'; id: string; buffer?: ArrayBuffer; samples: DecodedSample[] }
 	| { type: 'program'; ch: number; program: number }
 	| { type: 'gain'; ch: number; gain: number }
@@ -55,6 +56,13 @@ export type Message =
 	/** A MIDI message to play now, such as a note from a keyboard. */
 	| { type: 'midi'; data: number[]; offset?: number }
 	| PlayCommand;
+
+type ScoreMessage = {
+	type: 'score';
+	events: ScoreEvent[];
+	notes: ScoreNote[];
+	at?: { frame: number; pos: number; rate: number; loop: [number, number] | null };
+};
 
 /**
  * Starts playing at `frame` from `pos`, `rate` seconds of the score per second, repeating `loop`
@@ -70,14 +78,17 @@ type PlayCommand =
 			loop: [number, number] | null;
 			seek: boolean;
 	  }
-	| { type: 'stop'; frame: number };
+	| { type: 'stop'; frame: number }
+	| (ScoreMessage & { frame: number });
 
 /** The fields of spessasynth_core's internal voices that starting a note part-way through needs. */
 interface Voice {
 	isActive: boolean;
 	isInRelease: boolean;
+	isHeld: boolean;
 	channel: number;
 	midiNote: number;
+	noteID: number;
 	gainModifier: number;
 	startTime: number;
 	releaseStartTime: number;
@@ -102,6 +113,12 @@ interface Voice {
 		hasLooped: boolean;
 	};
 	exclusiveRelease(currentTime: number): void;
+}
+
+/** The fields of spessasynth_core's internal channels that pair a note-off with its voices. */
+interface Channel {
+	noteOnID: number[];
+	playingNotes: boolean[];
 }
 
 /**
@@ -155,9 +172,12 @@ export class Engine {
 
 	receive(m: Message) {
 		const synth = this.synth;
-		if (m.type === 'score') {
+		if (m.type === 'score' && !m.at) {
 			this.#events = m.events;
 			this.#notes = m.notes;
+		} else if (m.type === 'score') {
+			this.#commands.push({ ...m, frame: m.at!.frame });
+			this.#commands.sort((a, b) => a.frame - b.frame);
 		} else if (m.type === 'bank') {
 			// With a buffer, the bank is new or replaces the one of this id.
 			let bank = this.#banks.get(m.id);
@@ -172,9 +192,9 @@ export class Engine {
 					entry.soundBank = bank;
 					synth.refreshPresets();
 				} else {
-					synth.soundBankManager.addSoundBank(bank, m.id);
-					// Adding a bank resets the controllers of all channels, and stops all notes.
-					if (this.#play) this.#seek(this.#play.pos, this.#play.rate);
+					// Without a reset: the channels keep their controllers (programs, gains) and the notes
+					// that sound go on, as a bank arrives while playing (a new rendering's instrument).
+					synth.soundBankManager.addSoundBank(bank, m.id, 0, false);
 				}
 			}
 			for (const { index, data } of m.samples) {
@@ -197,7 +217,9 @@ export class Engine {
 			this.#channel((m.data[0] & 0x0f) + (m.offset ?? 0));
 			this.#message(m.data, m.offset);
 		} else if (m.type === 'stop') {
-			// It cancels playing that hasn't started yet.
+			// It cancels playing that hasn't started yet, but not a score that replaces another.
+			for (const c of this.#commands)
+				if (c.type === 'score') [this.#events, this.#notes] = [c.events, c.notes];
 			this.#commands = [m];
 		} else {
 			this.#commands.push(m);
@@ -273,7 +295,12 @@ export class Engine {
 	}
 
 	#apply(c: PlayCommand) {
-		if (c.type === 'stop') {
+		if (c.type === 'score') {
+			const { pos, rate, loop } = c.at!;
+			[this.#events, this.#notes] = [c.events, c.notes];
+			this.#play = { pos, rate, loop };
+			this.#seek(pos, rate, true);
+		} else if (c.type === 'stop') {
 			this.#play = null;
 			this.#fades = [];
 			this.synth.stopAll(false);
@@ -396,13 +423,19 @@ export class Engine {
 	/**
 	 * Releases the notes that sound, and goes to `pos`: sets the controllers as the events before
 	 * it left them, and starts the notes that sound at `pos` part-way through, as if they had
-	 * played since their start at `rate`.
+	 * played since their start at `rate` (a legato note since the start of the notes it goes on
+	 * from). With `carry` (a score that replaces another), a note that sounds at `pos` on a
+	 * channel and key that sound already goes on in their voices, rather than starting again
+	 * while they fade out, which sounded like playing it twice.
 	 */
-	#seek(pos: number, rate: number) {
+	#seek(pos: number, rate: number, carry = false) {
 		const synth = this.synth,
 			events = this.#events;
+		const sounding = carry
+			? this.#voices.filter((v) => v.isActive && v.releaseStartTime === Infinity && !v.isHeld)
+			: [];
 		synth.stopAll(false);
-		this.#fades = [];
+		const carried = new Set<Voice>();
 		this.#next = 0;
 		for (; this.#next < events.length && events[this.#next].t < pos; this.#next++) {
 			const { data, offset } = events[this.#next];
@@ -410,10 +443,27 @@ export class Engine {
 		}
 		for (const note of this.#notes) {
 			if (note.t0 >= pos || note.t1 <= pos) continue;
+			const going = sounding.filter((v) => v.channel === note.ch && v.midiNote === note.key);
+			if (going.length) {
+				// Undoes stopAll() for them, and counts them as the channel's note-on of the key, so
+				// that the score's note-off releases them.
+				const channel = this.#channel(note.ch) as unknown as Channel;
+				const id = channel.noteOnID[note.key]++;
+				channel.playingNotes[note.key] = true;
+				for (const v of going) {
+					v.releaseStartTime = Infinity;
+					v.noteID = id;
+					sounding.splice(sounding.indexOf(v), 1);
+					carried.add(v);
+				}
+				continue;
+			}
 			const since = (pos - (note.onset ?? note.t0)) / rate;
 			for (const v of this.#start(() => synth.noteOn(note.ch, note.key, note.vel)))
 				advance(v, since, this.#rate);
 		}
+		// A voice carried on in the middle of a legato's crossfade fades in to the end.
+		this.#fades = this.#fades.filter((f) => carried.has(f.voice));
 	}
 }
 

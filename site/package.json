@@ -32,6 +32,6 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
-		"spessasynth_core": "^4.4.7"
+		"spessasynth_core": "^4.4.9"
 	}
 }

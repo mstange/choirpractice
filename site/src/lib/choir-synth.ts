@@ -51,7 +51,7 @@ const CLICK = 0.05;
  * Plays a piece's score.mid, each part on its MIDI channels, with the vocal parts on an instrument
  * of the user's choice.
  *
- * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's 16,
+ * Each vocal part also plays its notes on a piano, on a channel of its own beyond the score's,
  * which stays silent until setPianoGain(). The vocal parts sing their melismas legato (see
  * singing.ts); the piano strikes every note. The instruments with a preset per vowel slide from
  * one vowel to another with their formant tables (FORMANT_PROGRAMS).
@@ -82,7 +82,7 @@ export class ChoirSynth extends Synth {
 		soundfontUrl: (file: string) => string,
 		vocalProgram: number
 	) {
-		super(duration, (program) => soundfontUrl(soundfontFile(program)));
+		super((program) => soundfontUrl(soundfontFile(program)), duration);
 		this.#beats = beats.filter(([t]) => t < duration);
 		this.#parts = parts;
 		this.#voices = voices;
@@ -96,8 +96,10 @@ export class ChoirSynth extends Synth {
 				})
 				.then((table) => this.setFormants(program, table))
 				.catch((e) => this.fail(e));
-		// Channel 9 of every 16 plays drum kits.
-		let next = 16;
+		// Above the score's channels (of more than one MIDI port, 16 per port). Channel 9 of every
+		// 16 plays drum kits.
+		const ports = Math.ceil((Math.max(0, ...parts.flatMap((p) => p.channels)) + 1) / 16);
+		let next = 16 * ports;
 		for (const { name, vocal, channels } of parts) {
 			if (!vocal || !channels.length) continue;
 			if (next % 16 === 9) next++;
@@ -118,7 +120,7 @@ export class ChoirSynth extends Synth {
 		// so that it sits at the level of the part it doubles.
 		const doubled = events.flatMap((e) => {
 			const type = e.data[0] & 0xf0,
-				ch = piano.get(e.data[0] & 0x0f);
+				ch = piano.get((e.data[0] & 0x0f) + (e.offset ?? 0));
 			const copied =
 				type === 0x80 || type === 0x90 || (type === 0xb0 && [7, 10, 11].includes(e.data[1]));
 			if (ch === undefined || !copied) return [e];

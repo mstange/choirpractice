@@ -36,15 +36,22 @@ export class Synth {
 	/** Playing, but held, or the instruments haven't loaded yet. */
 	waiting = $state(false);
 	error = $state('');
-	readonly duration: number;
+	/** The score's length in seconds: the one given to the constructor, else the MIDI file's, once
+	 * loaded. */
+	duration = $state(0);
 
 	#ctx = (() => {
 		// On iOS, the music then plays even with the ringer switched to silent. While the mic is on,
-		// the session is play-and-record instead (see mic.svelte.ts).
-		if (navigator.audioSession?.type === 'auto') navigator.audioSession.type = 'playback';
+		// the session is play-and-record instead (see choirpractice-app's mic.svelte.ts).
+		// Safari's Audio Session API, not in TypeScript's DOM types yet.
+		const session = (navigator as { audioSession?: { type: string } }).audioSession;
+		if (session?.type === 'auto') session.type = 'playback';
 		return new AudioContext({ latencyHint: 'playback' });
 	})();
 	#node: AudioWorkletNode | undefined;
+	#setup: Promise<void> | undefined;
+	/** Counts the scores asked for, so that only the latest one is played. */
+	#loads = 0;
 	/** Messages for the audio thread from before it was there. */
 	#queue: [Message, Transferable[]][] = [];
 	#worker = new Worker(new URL('./synth-worker.ts', import.meta.url), { type: 'module' });
@@ -53,6 +60,7 @@ export class Synth {
 	#soundfontUrl: (program: number) => string;
 	/** Per channel, its notes to decode samples for, each once. */
 	#notes = new Map<number, Played[]>();
+	#fixedDuration: number | undefined;
 	/** Whether the score has been read, so that the notes of each channel are known. */
 	#scored = false;
 	/** Per channel, a count of program changes, so that only the latest one takes effect. */
@@ -69,10 +77,15 @@ export class Synth {
 	 */
 	#anchor: Anchor | null = null;
 
-	/** `soundfontUrl` gives the URL of a General MIDI program's soundfont file. */
-	constructor(duration: number, soundfontUrl: (program: number) => string) {
-		this.duration = duration;
+	/**
+	 * `soundfontUrl` gives the URL of a General MIDI program's soundfont file. A score whose length
+	 * is known (to the end of its last bar, which the MIDI file's last note may not reach) gives it
+	 * as `duration`.
+	 */
+	constructor(soundfontUrl: (program: number) => string, duration?: number) {
 		this.#soundfontUrl = soundfontUrl;
+		this.#fixedDuration = duration;
+		if (duration !== undefined) this.duration = duration;
 		this.#worker.onmessage = ({ data }) => {
 			const [resolve, reject] = this.#requests.get(data.id)!;
 			this.#requests.delete(data.id);
@@ -81,22 +94,32 @@ export class Synth {
 		};
 	}
 
-	/** Loads the score and its instruments. */
-	async load(midiUrl: string) {
-		try {
-			await this.#ctx.audioWorklet.addModule(workletUrl);
-			this.#node = new AudioWorkletNode(this.#ctx, 'synth', {
-				numberOfInputs: 0,
-				outputChannelCount: [2]
-			});
-			this.#node.connect(this.#ctx.destination);
-			for (const [m, transfer] of this.#queue) this.#node.port.postMessage(m, transfer);
-			this.#queue = [];
+	async #worklet() {
+		await this.#ctx.audioWorklet.addModule(workletUrl);
+		this.#node = new AudioWorkletNode(this.#ctx, 'synth', {
+			numberOfInputs: 0,
+			outputChannelCount: [2]
+		});
+		this.#node.connect(this.#ctx.destination);
+		for (const [m, transfer] of this.#queue) this.#node.port.postMessage(m, transfer);
+		this.#queue = [];
+	}
 
-			const { events, notes, programs } = this.arrange(
-				await this.#request<MidiReply>({ type: 'midi', url: midiUrl })
-			);
-			this.#post({ type: 'score', events, notes });
+	/**
+	 * Loads the score of a MIDI file and its instruments, and answers what it read, or undefined
+	 * if it failed or another score was asked for meanwhile. A score that replaces another plays
+	 * from the position, and with the loop, that `map` gives for where the other one is: while
+	 * playing, it takes over without a stop.
+	 */
+	async load(midiUrl: string, map?: (pos: number, midi: MidiReply) => number) {
+		const load = ++this.#loads;
+		try {
+			this.#setup ??= this.#worklet();
+			await this.#setup;
+			const midi = await this.#request<MidiReply>({ type: 'midi', url: midiUrl });
+			if (load !== this.#loads) return;
+			const { events, notes, programs } = this.arrange(midi);
+			this.#notes = new Map();
 			for (const n of notes) {
 				const list = this.#notes.get(n.ch) ?? [],
 					bank = n.bank ?? 0;
@@ -105,14 +128,40 @@ export class Synth {
 				this.#notes.set(n.ch, list);
 			}
 			this.#scored = true;
+			// The samples of the notes it has that the score before hadn't.
 			const loads = [];
 			for (const [ch, program] of programs) loads.push(this.setProgram(ch, program));
 			await Promise.all(loads);
+			if (load !== this.#loads) return;
+			this.#replace(events, notes, midi.duration, map ? (pos) => map(pos, midi) : (pos) => pos);
 			this.#ready = true;
 			if (this.playing && this.waiting) this.#start();
+			return midi;
 		} catch (e) {
 			this.fail(e);
 		}
+	}
+
+	#replace(
+		events: ScoreEvent[],
+		notes: ScoreNote[],
+		duration: number,
+		map: (pos: number) => number
+	) {
+		this.duration = this.#fixedDuration ?? duration;
+		const loop = this.#loop && (this.#loop.map(map) as [number, number]);
+		this.#loop = loop;
+		if (!this.#anchor) {
+			this.#offset = Math.min(map(this.#offset), duration);
+			this.#post({ type: 'score', events, notes });
+			return;
+		}
+		const frame = this.#soon(),
+			pos = map(this.#posAt(frame / this.#ctx.sampleRate)),
+			rate = this.#rate;
+		// Without the anchor before: until `frame`, the position is in the other score's time.
+		this.#anchor = { time: frame / this.#ctx.sampleRate, pos, rate, loop };
+		this.#post({ type: 'score', events, notes, at: { frame, pos, rate, loop } });
 	}
 
 	/**

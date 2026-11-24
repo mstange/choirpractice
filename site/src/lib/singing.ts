@@ -48,8 +48,8 @@ export function sing(events: ScoreEvent[], notes: ScoreNote[], parts: Part[], vo
 		offs = new Map<string, ScoreEvent>();
 	for (const e of events) {
 		const type = e.data[0] & 0xf0;
-		if (e.offset !== undefined || (type !== 0x80 && type !== 0x90)) continue;
-		const id = `${e.data[0] & 0x0f}:${e.data[1]}:${e.t}`;
+		if (type !== 0x80 && type !== 0x90) continue;
+		const id = `${(e.data[0] & 0x0f) + (e.offset ?? 0)}:${e.data[1]}:${e.t}`;
 		if (type === 0x90 && e.data[2] > 0) ons.set(id, e);
 		else offs.set(id, e);
 	}

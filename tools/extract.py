@@ -51,16 +51,19 @@ def varlen(data, p):
 def read_midi(path):
     """Returns (division, [(tick, seconds, seconds_per_tick)], tracks, note_ticks), where tracks
     holds the set of channels that each track plays notes on, and note_ticks the sorted ticks of
-    all note-ons."""
+    all note-ons. A channel of MIDI port p is 16 times the port's place among the ports plus its
+    number, as the page's player (spessasynth) counts them: MuseScore gives a score that needs more
+    than 16 channels more ports."""
     data = open(path, "rb").read()
     assert data[:4] == b"MThd"
     _, _, ntracks, division = struct.unpack(">IHHH", data[4:14])
-    pos, tempos, tracks, note_ticks = 14, [], [], []
+    pos, tempos, tracks, note_ticks, offsets = 14, [], [], [], {}
     for _ in range(ntracks):
         assert data[pos : pos + 4] == b"MTrk"
         (length,) = struct.unpack(">I", data[pos + 4 : pos + 8])
         p, end, tick, status = pos + 8, pos + 8 + length, 0, 0
         tracks.append(set())
+        port = None
         while p < end:
             delta, p = varlen(data, p)
             tick += delta
@@ -72,6 +75,8 @@ def read_midi(path):
                 ln, p = varlen(data, p + 1)
                 if mtype == 0x51:
                     tempos.append((tick, int.from_bytes(data[p : p + 3], "big")))
+                elif mtype == 0x21:
+                    port = data[p]
                 p += ln
             elif status in (0xF0, 0xF7):
                 ln, p = varlen(data, p)
@@ -82,6 +87,9 @@ def read_midi(path):
                     note_ticks.append(tick)
                 p += 1 if (status & 0xF0) in (0xC0, 0xD0) else 2
         pos = end
+        if tracks[-1] and port is not None:
+            offsets.setdefault(port, 16 * len(offsets))
+            tracks[-1] = {offsets[port] + ch for ch in tracks[-1]}
     segs, sec, last_tick, spt = [(0, 0.0, 0.5 / division)], 0.0, 0, 0.5 / division
     for tick, uspq in sorted(tempos):
         sec += (tick - last_tick) * spt
@@ -275,11 +283,14 @@ def part_channels(root, mid_path):
         staves = int(part.findtext("measure/attributes/staves") or 1)
         channels[sp.get("id")] = sorted(set().union(*tracks[i : i + staves]))
         i += staves
-        first = int(sp.findtext("midi-instrument/midi-channel")) - 1
+        # The MusicXML's port is the MIDI file's, counted from 1 (see read_midi()).
+        device = sp.find("midi-device")
+        port = int(device.get("port", 1)) if device is not None else 1
+        first = 16 * (port - 1) + int(sp.findtext("midi-instrument/midi-channel")) - 1
         if channels[sp.get("id")] and first not in channels[sp.get("id")]:
             sys.exit(
                 f"{sp.findtext('part-name')}: its tracks play on channels "
-                f"{channels[sp.get('id')]}, not on its MusicXML channel {first}"
+                f"{channels[sp.get('id')]}, not on its MusicXML channel {first} (port {port})"
             )
     if i != len(tracks):
         sys.exit(f"the score has {i} staves, but the MIDI file has {len(tracks)} tracks")

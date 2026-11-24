@@ -7,8 +7,6 @@ import { EDITING_BANK } from './patch.ts';
 
 /** The General MIDI program of the designed instrument while it is played here. */
 export const DESIGNED = 54;
-/** The channel of the on-screen keyboard: the first beyond the score's 16. */
-const KEYBOARD = 16;
 /** The [key, velocity] of the keyboard's notes, whose samples are decoded ahead. */
 const KEYBOARD_NOTES = Array.from({ length: 49 }, (_, i) =>
 	[49, 80, 112].map((v) => [36 + i, v] as [number, number])
@@ -41,6 +39,8 @@ export class DesignerSynth extends Synth {
 	#vocal: number[];
 	#program: number;
 	#bank: Promise<void>;
+	/** The channel of the on-screen keyboard: the first of the MIDI port after the score's. */
+	#keyboard: number;
 	#bankArrived!: () => void;
 	/** The score's events and notes, and per channel its CC2 events as [time, value]. */
 	events: ScoreEvent[] = [];
@@ -54,11 +54,12 @@ export class DesignerSynth extends Synth {
 		soundfontUrl: (program: number) => string,
 		program: number
 	) {
-		super(duration, soundfontUrl);
+		super(soundfontUrl, duration);
 		this.#parts = parts;
 		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
 		this.#program = program;
+		this.#keyboard = 16 * Math.ceil((Math.max(0, ...parts.flatMap((p) => p.channels)) + 1) / 16);
 		this.#bank = new Promise((resolve) => (this.#bankArrived = resolve));
 	}
 
@@ -66,9 +67,9 @@ export class DesignerSynth extends Synth {
 		sing(midi.events, midi.notes, this.#parts, this.#voices);
 		this.events = midi.events;
 		this.notes = midi.notes;
-		for (const { t, data } of midi.events)
+		for (const { t, data, offset } of midi.events)
 			if ((data[0] & 0xf0) === 0xb0 && data[1] === 2) {
-				const ch = data[0] & 0x0f;
+				const ch = (data[0] & 0x0f) + (offset ?? 0);
 				if (!this.breath.has(ch)) this.breath.set(ch, []);
 				this.breath.get(ch)!.push([t, data[2]]);
 			}
@@ -77,17 +78,23 @@ export class DesignerSynth extends Synth {
 		return { ...midi, programs };
 	}
 
-	async load(midiUrl: string) {
-		await super.load(midiUrl);
+	async load(midiUrl: string, map?: (pos: number, midi: MidiReply) => number) {
+		const midi = await super.load(midiUrl, map);
 		// The keyboard sounds as loud, panned and reverberant as the first vocal part.
 		const first = this.#vocal[0];
 		for (const cc of [7, 10, 91, 93]) {
-			const e = this.events.find((e) => e.data[0] === (0xb0 | first) && e.data[1] === cc);
-			if (e) this.send([0xb0, cc, e.data[2]], KEYBOARD);
+			const e = this.events.find(
+				(e) =>
+					(e.data[0] & 0xf0) === 0xb0 &&
+					(e.data[0] & 0x0f) + (e.offset ?? 0) === first &&
+					e.data[1] === cc
+			);
+			if (e) this.send([0xb0, cc, e.data[2]], this.#keyboard);
 		}
 		// The keyboard plays the selected vowel, if the designed bank has more than one.
-		this.send([0xb0, 0, EDITING_BANK], KEYBOARD);
-		await this.setProgram(KEYBOARD, this.#program, KEYBOARD_NOTES);
+		this.send([0xb0, 0, EDITING_BANK], this.#keyboard);
+		await this.setProgram(this.#keyboard, this.#program, KEYBOARD_NOTES);
+		return midi;
 	}
 
 	protected async setProgram(ch: number, program: number, notes?: [number, number][]) {
@@ -110,7 +117,7 @@ export class DesignerSynth extends Synth {
 		try {
 			await Promise.all([
 				...this.#vocal.map((ch) => this.setProgram(ch, program)),
-				this.setProgram(KEYBOARD, program, KEYBOARD_NOTES)
+				this.setProgram(this.#keyboard, program, KEYBOARD_NOTES)
 			]);
 		} catch (e) {
 			this.fail(e);
@@ -123,15 +130,15 @@ export class DesignerSynth extends Synth {
 	}
 
 	noteOn(key: number, velocity: number) {
-		this.send([0x90, key, velocity], KEYBOARD);
+		this.send([0x90, key, velocity], this.#keyboard);
 	}
 
 	noteOff(key: number) {
-		this.send([0x80, key, 0], KEYBOARD);
+		this.send([0x80, key, 0], this.#keyboard);
 	}
 
 	/** Sets the keyboard's CC2, which the designed instrument's dynamics follow. */
 	breathe(value: number) {
-		this.send([0xb0, 2, value], KEYBOARD);
+		this.send([0xb0, 2, value], this.#keyboard);
 	}
 }

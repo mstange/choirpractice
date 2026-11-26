@@ -2,6 +2,21 @@ import { Mic } from './mic.svelte.ts';
 import { norm, voiceType } from './colors.ts';
 
 /** What carries over from one piece to the next, and what each piece keeps across visits. */
+export const METRONOME_LEVELS = [
+	'Off',
+	'Downbeats only',
+	'Regular',
+	'Subdivided',
+	'Super subdivided'
+];
+
+/** The stored metronome level, from the booleans of Metronome and Subdivide that it replaced. */
+function storedMetronome() {
+	const value = globalThis.localStorage?.getItem('metronome');
+	if (value === 'true') return localStorage.getItem('subdivide') === 'true' ? 3 : 2;
+	return Number(value) || 0;
+}
+
 export class Session {
 	readonly mic = new Mic();
 	/** Whether a piano doubles the selected parts, so that their notes' starts are easier to hear. */
@@ -14,8 +29,9 @@ export class Session {
 	#barSeconds = $state(Number(globalThis.localStorage?.getItem('barSeconds') ?? 10));
 	// Choir Aahs.
 	#vocalProgram = $state(Number(globalThis.localStorage?.getItem('vocalProgram') ?? 52));
-	#metronome = $state(globalThis.localStorage?.getItem('metronome') === 'true');
-	#subdivide = $state(globalThis.localStorage?.getItem('subdivide') === 'true');
+	#metronome = $state(storedMetronome());
+	// The level that K turns the metronome back on to.
+	#metronomeOn = Number(globalThis.localStorage?.getItem('metronomeOn') ?? (this.#metronome || 2));
 	#returnOnPause = $state(globalThis.localStorage?.getItem('returnOnPause') === 'true');
 	#emphasis: [number, number] = $state(
 		JSON.parse(globalThis.localStorage?.getItem('emphasis') ?? '[0.2, 0.95]')
@@ -55,22 +71,22 @@ export class Session {
 		localStorage.setItem('vocalProgram', String(value));
 	}
 
-	/** Whether a metronome clicks on the beats. Kept across visits. */
+	/**
+	 * How much the metronome clicks, a level of METRONOME_LEVELS: 0 not at all, 1 on downbeats, 2 on
+	 * the beats, 3 and 4 also on subdivisions. Kept across visits.
+	 */
 	get metronome() {
 		return this.#metronome;
 	}
-	set metronome(value: boolean) {
+	set metronome(value: number) {
 		this.#metronome = value;
 		localStorage.setItem('metronome', String(value));
+		if (value) localStorage.setItem('metronomeOn', String((this.#metronomeOn = value)));
 	}
 
-	/** Whether the metronome also clicks between the beats. Kept across visits. */
-	get subdivide() {
-		return this.#subdivide;
-	}
-	set subdivide(value: boolean) {
-		this.#subdivide = value;
-		localStorage.setItem('subdivide', String(value));
+	/** Turns the metronome off, or back on to the level it last had. */
+	toggleMetronome() {
+		this.metronome = this.metronome ? 0 : this.#metronomeOn;
 	}
 
 	/** Whether pausing goes back to where playback started. Kept across visits. */

@@ -11,7 +11,7 @@
 	import { phraseTime } from './lyrics.ts';
 	import { mediaUrl } from './pieces.ts';
 	import { Sheet } from './sheet.ts';
-	import type { Saved, Session } from './session.svelte.ts';
+	import { METRONOME_LEVELS, type Saved, type Session } from './session.svelte.ts';
 	import { ChoirSynth } from './choir-synth.ts';
 	import type { PieceData, PieceEntry, View } from './types.ts';
 
@@ -33,7 +33,25 @@
 		session: Session;
 	} = $props();
 	// svelte-ignore state_referenced_locally
-	const { voices, parts, measures, engravings, beats = [], subbeats = [] } = piece;
+	const {
+		voices,
+		parts,
+		measures,
+		engravings,
+		beats = [],
+		subbeats = [],
+		subsubbeats = []
+	} = piece;
+	// The metronome's clicks per level above Off: downbeats, the other beats, and subdivisions.
+	const clicks = [
+		beats.filter(([, down]) => down).map(([t]) => t),
+		beats.filter(([, down]) => !down).map(([t]) => t),
+		subbeats,
+		subsubbeats
+	];
+	// Older pieces have no subdivisions, and those without beats no metronome.
+	const metronomeLevels = clicks.findLastIndex((times) => times.length) + 1;
+	const metronome = $derived(Math.min(session.metronome, metronomeLevels));
 	// svelte-ignore state_referenced_locally
 	const fileUrl = (file: string) => mediaUrl(season, `${entry.slug}/${file}`);
 
@@ -60,8 +78,7 @@
 		parts,
 		voices,
 		measures[measures.length - 1],
-		beats,
-		subbeats,
+		clicks,
 		(file) => mediaUrl('soundfont', file),
 		// svelte-ignore state_referenced_locally
 		session.vocalProgram
@@ -195,8 +212,7 @@
 		}
 	});
 
-	$effect(() => synth.setMetronomeGain(session.metronome ? METRONOME_GAIN : 0));
-	$effect(() => synth.setSubbeatGain(session.metronome && session.subdivide ? METRONOME_GAIN : 0));
+	$effect(() => synth.setMetronome(metronome, METRONOME_GAIN));
 
 	onMount(() => {
 		synth.load(fileUrl('score.mid'));
@@ -602,8 +618,8 @@
 			loop = { ...loop, on: !loop.on };
 		} else if ((e.key === 'j' || e.key === 'J') && !e.repeat) {
 			pressJustMe();
-		} else if ((e.key === 'k' || e.key === 'K') && beats.length) {
-			session.metronome = !session.metronome;
+		} else if ((e.key === 'k' || e.key === 'K') && metronomeLevels) {
+			session.toggleMetronome();
 		} else if (e.key === 'm' || e.key === 'M') {
 			toggleMic();
 		} else if (e.key === 'v' || e.key === 'V') {
@@ -1008,28 +1024,6 @@
 					<input type="checkbox" bind:checked={session.extraPiano} />
 					Extra Piano
 				</label>
-				{#if beats.length}
-					<label
-						class="check"
-						title="Clicks on the beats, as in MuseScore, higher on the first of each measure (K)"
-					>
-						<input type="checkbox" bind:checked={session.metronome} />
-						Metronome
-					</label>
-					{#if subbeats.length}
-						<label
-							class="check sub"
-							title="The metronome also clicks, softer, between the beats: three times per dotted beat, twice per other beat"
-						>
-							<input
-								type="checkbox"
-								bind:checked={session.subdivide}
-								disabled={!session.metronome}
-							/>
-							Subdivide
-						</label>
-					{/if}
-				{/if}
 				<label
 					class="check"
 					title="Pausing goes back to where playback started. Shift+Space pauses the other way."
@@ -1037,6 +1031,38 @@
 					<input type="checkbox" bind:checked={session.returnOnPause} />
 					Return on Pause
 				</label>
+				{#if metronomeLevels}
+					<label
+						class="top"
+						for="metronome"
+						title="Clicks as MuseScore's metronome does, higher on the first beat of each measure, and softer on subdivisions of the beats (K turns it off and on)"
+						>Metronome</label
+					>
+					<div class="notched" class:off={!metronome} style:--n={metronomeLevels}>
+						<div class="notches" style:--v={metronome}>
+							{#each METRONOME_LEVELS.slice(0, metronomeLevels + 1) as label, i (label)}
+								<span
+									class="notch"
+									class:off={i === 0}
+									class:regular={i === 2}
+									class:passed={i <= metronome}
+									style:--i={i}
+								></span>
+							{/each}
+							<input
+								id="metronome"
+								type="range"
+								min="0"
+								max={metronomeLevels}
+								step="1"
+								value={metronome}
+								aria-valuetext={METRONOME_LEVELS[metronome]}
+								oninput={(e) => (session.metronome = +e.currentTarget.value)}
+							/>
+						</div>
+						<output for="metronome">{METRONOME_LEVELS[metronome]}</output>
+					</div>
+				{/if}
 				<label for="mic-delay" title="Shifts the pitch you sing back, to line up with the music"
 					>Mic delay</label
 				>
@@ -1709,12 +1735,6 @@
 		gap: 6px;
 		margin-top: -4px;
 	}
-	.mix-panel .check.sub {
-		padding-left: 20px;
-	}
-	.mix-panel .check:has(:disabled) {
-		opacity: 0.45;
-	}
 	.mix-panel select {
 		font: inherit;
 		color: inherit;
@@ -1794,6 +1814,119 @@
 	.range-pair input:focus-visible::-moz-range-thumb {
 		outline: 2px solid #fff;
 		outline-offset: 2px;
+	}
+	/* Level with the slider, not with it and its caption. */
+	.mix-panel label.top {
+		align-self: start;
+	}
+	.notched {
+		--thumb: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	/* The track, filled up to the thumb, with the notches on it and the input on top. */
+	.notches {
+		position: relative;
+		height: var(--thumb);
+		background:
+			linear-gradient(
+					to right,
+					#ddd calc(var(--thumb) / 2 + var(--v) / var(--n) * (100% - var(--thumb))),
+					transparent 0
+				)
+				center / 100% 4px no-repeat,
+			linear-gradient(rgb(255 255 255 / 0.25), rgb(255 255 255 / 0.25)) center / 100% 4px no-repeat;
+	}
+	/* The notches sit on the track, at the thumb's centre for each level. */
+	.notch {
+		position: absolute;
+		top: 50%;
+		left: calc(var(--thumb) / 2 + var(--i) / var(--n) * (100% - var(--thumb)));
+		width: 6px;
+		height: 6px;
+		translate: -50% -50%;
+		border-radius: 50%;
+		background: rgb(255 255 255 / 0.4);
+	}
+	.notch.passed {
+		background: #ddd;
+	}
+	/* Off is a ring, and Regular, MuseScore's own clicks, a taller bar. */
+	.notch.off {
+		width: 10px;
+		height: 10px;
+		background: hsl(var(--bg-hue) 18% 13%);
+		border: 2px solid rgb(255 255 255 / 0.55);
+		box-sizing: border-box;
+	}
+	.notch.regular {
+		width: 4px;
+		height: 14px;
+		border-radius: 2px;
+		background: rgb(255 255 255 / 0.6);
+	}
+	.notch.regular.passed {
+		background: #fff;
+	}
+	.notches input {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		appearance: none;
+		background: transparent;
+		cursor: pointer;
+	}
+	.notches input::-webkit-slider-runnable-track {
+		height: 100%;
+		background: transparent;
+	}
+	.notches input::-moz-range-track {
+		background: transparent;
+	}
+	.notches input:focus-visible {
+		outline: none;
+	}
+	.notches input::-webkit-slider-thumb {
+		appearance: none;
+		width: var(--thumb);
+		height: var(--thumb);
+		border: 0;
+		border-radius: 50%;
+		background: #ddd;
+	}
+	.notches input::-moz-range-thumb {
+		width: var(--thumb);
+		height: var(--thumb);
+		border: 0;
+		border-radius: 50%;
+		background: #ddd;
+	}
+	/* While off, the thumb is hollow like the Off notch. */
+	.notched.off input::-webkit-slider-thumb {
+		background: transparent;
+		box-shadow: inset 0 0 0 2px #ddd;
+	}
+	.notched.off input::-moz-range-thumb {
+		background: transparent;
+		box-shadow: inset 0 0 0 2px #ddd;
+	}
+	.notches input:focus-visible::-webkit-slider-thumb {
+		outline: 2px solid #fff;
+		outline-offset: 2px;
+	}
+	.notches input:focus-visible::-moz-range-thumb {
+		outline: 2px solid #fff;
+		outline-offset: 2px;
+	}
+	.notched output {
+		font-size: 12px;
+		opacity: 0.7;
+	}
+	.notched.off output {
+		opacity: 0.45;
 	}
 	.with-value {
 		display: flex;

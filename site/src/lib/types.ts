@@ -69,6 +69,8 @@ export interface PieceData {
 	 * in pieces built before they were added.
 	 */
 	subbeats?: number[];
+	/** The times of the clicks that split those in two again. Missing in older pieces. */
+	subsubbeats?: number[];
 	engravings: Engraving[];
 }
 

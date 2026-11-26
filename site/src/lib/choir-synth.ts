@@ -44,11 +44,17 @@ export function programsUsed(parts: Part[], midi: Map<number, number>, vocalProg
 const pianoVelocity = (vel: number) => (vel ? Math.round(32 + (vel * (100 - 32)) / 128) : 0);
 
 /**
- * The velocity of the metronome's clicks, mf like MuseScore's, and their length. The clicks
- * between the beats are softer, so that the beats stand out.
+ * The key and velocity of the metronome's clicks at each level: downbeats, the other beats, their
+ * subdivisions and the subdivisions' subdivisions. The beats are mf like MuseScore's, and each
+ * finer level is softer, so that the coarser ones stand out.
  */
-const CLICK_VELOCITY = 80;
-const SUBBEAT_VELOCITY = 56;
+const CLICKS = [
+	{ key: METRONOME_KEYS.downbeat, vel: 80 },
+	{ key: METRONOME_KEYS.beat, vel: 80 },
+	{ key: METRONOME_KEYS.beat, vel: 56 },
+	{ key: METRONOME_KEYS.beat, vel: 40 }
+];
+/** The length of a click. */
 const CLICK = 0.05;
 
 /**
@@ -60,9 +66,8 @@ const CLICK = 0.05;
  * singing.ts); the piano strikes every note. The instruments with a preset per vowel slide from
  * one vowel to another with their formant tables (FORMANT_PROGRAMS).
  *
- * A metronome clicks on the beats, as MuseScore's does, on a channel of its own, which stays
- * silent until setMetronomeGain(), and softer between the beats on another, which stays silent
- * until setSubbeatGain().
+ * A metronome clicks on the beats, as MuseScore's does, and softer on their subdivisions, each
+ * level of clicks on a channel of its own, which stays silent until setMetronome().
  */
 export class ChoirSynth extends Synth {
 	#parts: Part[];
@@ -75,25 +80,20 @@ export class ChoirSynth extends Synth {
 	 */
 	#vocal: number[];
 	#vocalProgram: number;
-	/** The metronome's clicks, each with whether it is a downbeat, and its channel. */
-	#beats: [t: number, downbeat: 0 | 1][];
-	#metronome: number;
-	/** The clicks between the beats, and their channel. */
-	#subbeats: number[];
-	#subbeat: number;
+	/** The times of the metronome's clicks at each level of CLICKS, and the channel of each level. */
+	#clicks: number[][];
+	#metronome: number[] = [];
 
 	constructor(
 		parts: Part[],
 		voices: Voice[],
 		duration: number,
-		beats: [t: number, downbeat: 0 | 1][],
-		subbeats: number[],
+		clicks: number[][],
 		soundfontUrl: (file: string) => string,
 		vocalProgram: number
 	) {
 		super((program) => soundfontUrl(soundfontFile(program)), duration);
-		this.#beats = beats.filter(([t]) => t < duration);
-		this.#subbeats = subbeats.filter((t) => t < duration);
+		this.#clicks = clicks.map((times) => times.filter((t) => t < duration));
 		this.#parts = parts;
 		this.#voices = voices;
 		this.#vocal = parts.filter((p) => p.vocal && p.channels.length === 1).map((p) => p.channels[0]);
@@ -115,10 +115,10 @@ export class ChoirSynth extends Synth {
 			if (next % 16 === 9) next++;
 			this.#pianos.set(name, next++);
 		}
-		if (next % 16 === 9) next++;
-		this.#metronome = next++;
-		if (next % 16 === 9) next++;
-		this.#subbeat = next;
+		for (const _ of this.#clicks) {
+			if (next % 16 === 9) next++;
+			this.#metronome.push(next++);
+		}
 	}
 
 	protected arrange({ events, notes, programs }: MidiReply): Score {
@@ -146,27 +146,24 @@ export class ChoirSynth extends Synth {
 				.map((n) => ({ ...n, ch: piano.get(n.ch)!, vel: pianoVelocity(n.vel) }))
 		);
 		sing(doubled, notes, this.#parts, this.#voices);
-		const click = (t: number, key: number, vel: number, offset: number) => {
-			doubled.push(
-				{ t, data: [0x90, key, vel], offset },
-				{ t: t + CLICK, data: [0x80, key, 0], offset }
-			);
-			notes.push({ t0: t, t1: t + CLICK, ch: offset, key, vel });
-		};
-		for (const [t, downbeat] of this.#beats)
-			click(
-				t,
-				downbeat ? METRONOME_KEYS.downbeat : METRONOME_KEYS.beat,
-				CLICK_VELOCITY,
-				this.#metronome
-			);
-		for (const t of this.#subbeats) click(t, METRONOME_KEYS.beat, SUBBEAT_VELOCITY, this.#subbeat);
+		this.#clicks.forEach((times, level) => {
+			const { key, vel } = CLICKS[level],
+				offset = this.#metronome[level];
+			for (const t of times) {
+				doubled.push(
+					{ t, data: [0x90, key, vel], offset },
+					{ t: t + CLICK, data: [0x80, key, 0], offset }
+				);
+				notes.push({ t0: t, t1: t + CLICK, ch: offset, key, vel });
+			}
+		});
 		// sing() leaves the events in order; Array.sort() is stable, so it keeps theirs.
 		doubled.sort((a, b) => a.t - b.t);
 		const played = channelPrograms(this.#parts, programs, this.#vocalProgram);
 		for (const ch of this.#pianos.values()) played.set(ch, PIANO);
-		if (this.#beats.length) played.set(this.#metronome, METRONOME);
-		if (this.#subbeats.length) played.set(this.#subbeat, METRONOME);
+		this.#clicks.forEach((times, level) => {
+			if (times.length) played.set(this.#metronome[level], METRONOME);
+		});
 		return { events: doubled, notes, programs: played };
 	}
 
@@ -194,11 +191,8 @@ export class ChoirSynth extends Synth {
 		if (ch !== undefined) this.setChannelGain(ch, gain);
 	}
 
-	setMetronomeGain(gain: number) {
-		this.setChannelGain(this.#metronome, gain);
-	}
-
-	setSubbeatGain(gain: number) {
-		this.setChannelGain(this.#subbeat, gain);
+	/** Plays the metronome's clicks at gain up to the level-th of CLICKS, and none of the others. */
+	setMetronome(level: number, gain: number) {
+		this.#metronome.forEach((ch, i) => this.setChannelGain(ch, i < level ? gain : 0));
 	}
 }

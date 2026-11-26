@@ -1825,18 +1825,16 @@
 		flex-direction: column;
 		gap: 2px;
 	}
-	/* The track, filled up to the thumb, with the notches on it and the input on top. */
+	/* The track from the first notch to the last, filled up to the thumb, with the notches on it
+	   and the input on top. */
 	.notches {
 		position: relative;
 		height: var(--thumb);
 		background:
-			linear-gradient(
-					to right,
-					#ddd calc(var(--thumb) / 2 + var(--v) / var(--n) * (100% - var(--thumb))),
-					transparent 0
-				)
-				center / 100% 4px no-repeat,
-			linear-gradient(rgb(255 255 255 / 0.25), rgb(255 255 255 / 0.25)) center / 100% 4px no-repeat;
+			linear-gradient(to right, #ddd calc(var(--v) / var(--n) * 100%), transparent 0) center /
+				calc(100% - var(--thumb)) 4px no-repeat,
+			linear-gradient(rgb(255 255 255 / 0.25), rgb(255 255 255 / 0.25)) center /
+				calc(100% - var(--thumb)) 4px no-repeat;
 	}
 	/* The notches sit on the track, at the thumb's centre for each level. */
 	.notch {
@@ -1847,7 +1845,8 @@
 		height: 6px;
 		translate: -50% -50%;
 		border-radius: 50%;
-		background: rgb(255 255 255 / 0.4);
+		/* Opaque, as it looked on the track, since the outermost notches stick out past its ends. */
+		background: color-mix(in srgb, #fff 55%, hsl(var(--bg-hue) 18% 13%));
 	}
 	.notch.passed {
 		background: #ddd;
@@ -1864,7 +1863,7 @@
 		width: 4px;
 		height: 14px;
 		border-radius: 2px;
-		background: rgb(255 255 255 / 0.6);
+		background: color-mix(in srgb, #fff 70%, hsl(var(--bg-hue) 18% 13%));
 	}
 	.notch.regular.passed {
 		background: #fff;

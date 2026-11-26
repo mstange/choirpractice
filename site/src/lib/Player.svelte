@@ -33,7 +33,7 @@
 		session: Session;
 	} = $props();
 	// svelte-ignore state_referenced_locally
-	const { voices, parts, measures, engravings, beats = [] } = piece;
+	const { voices, parts, measures, engravings, beats = [], subbeats = [] } = piece;
 	// svelte-ignore state_referenced_locally
 	const fileUrl = (file: string) => mediaUrl(season, `${entry.slug}/${file}`);
 
@@ -61,6 +61,7 @@
 		voices,
 		measures[measures.length - 1],
 		beats,
+		subbeats,
 		(file) => mediaUrl('soundfont', file),
 		// svelte-ignore state_referenced_locally
 		session.vocalProgram
@@ -195,6 +196,7 @@
 	});
 
 	$effect(() => synth.setMetronomeGain(session.metronome ? METRONOME_GAIN : 0));
+	$effect(() => synth.setSubbeatGain(session.metronome && session.subdivide ? METRONOME_GAIN : 0));
 
 	onMount(() => {
 		synth.load(fileUrl('score.mid'));
@@ -1014,6 +1016,19 @@
 						<input type="checkbox" bind:checked={session.metronome} />
 						Metronome
 					</label>
+					{#if subbeats.length}
+						<label
+							class="check sub"
+							title="The metronome also clicks, softer, between the beats: three times per dotted beat, twice per other beat"
+						>
+							<input
+								type="checkbox"
+								bind:checked={session.subdivide}
+								disabled={!session.metronome}
+							/>
+							Subdivide
+						</label>
+					{/if}
 				{/if}
 				<label
 					class="check"
@@ -1693,6 +1708,12 @@
 		align-items: center;
 		gap: 6px;
 		margin-top: -4px;
+	}
+	.mix-panel .check.sub {
+		padding-left: 20px;
+	}
+	.mix-panel .check:has(:disabled) {
+		opacity: 0.45;
 	}
 	.mix-panel select {
 		font: inherit;

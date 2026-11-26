@@ -173,28 +173,31 @@ def time_map(mid_path, root, mscx):
 
 def metronome(bars, tempos):
     """The clicks of MuseScore's metronome (PlaybackEventsRenderer::renderMetronome), as (position
-    in quarter notes, downbeat). bars has (start, length, (numerator, denominator), pickup) per
-    measure, tempos the (position, quarter notes per minute) of each tempo mark.
+    in quarter notes, kind), where kind is 1 for a downbeat, 0 for another beat and 2 for a
+    subdivision. bars has (start, length, (numerator, denominator), pickup) per measure, tempos
+    the (position, quarter notes per minute) of each tempo mark.
 
     It clicks on every unit of the time signature's denominator, or on every dotted beat in a
     compound meter (a numerator above 3 that 3 divides, such as 6/8, 9/8, 12/8 and 6/4) if those
     come at least 60 times a minute at the tempo at the measure's start. An additive meter counts
     as the sum of its numerators: 3+2/8 is 5/8. Only the click at a measure's start is a
     downbeat. In a pickup, a first or irregular measure shorter than its time signature, the
-    clicks count as the end of a full measure, so none is a downbeat."""
+    clicks count as the end of a full measure, so none is a downbeat. MuseScore's metronome has
+    no subdivisions: here a dotted beat is split into three, and any other into two."""
     clicks = []
     for start, length, (num, den), pickup in bars:
         qpm = next((t for q, t in reversed(sorted(tempos)) if q <= start), 120)
         unit = Fraction(4, den)
         compound = num > 3 and num % 3 == 0
         step = 3 * unit if compound and qpm * den / 12 >= 60 else unit
+        sub = step / 3 if step == 3 * unit else step / 2
         pos, rpos, bar = start, Fraction(0), num * unit
         if pickup and length < bar:
-            rest = length % step
+            rest = length % sub
             pos, rpos = start + rest, rest + bar - length
         while pos < start + length:
-            clicks.append((pos, rpos == 0))
-            pos, rpos = pos + step, rpos + step
+            clicks.append((pos, 1 if rpos == 0 else 0 if rpos % step == 0 else 2))
+            pos, rpos = pos + sub, rpos + sub
     return clicks
 
 
@@ -349,7 +352,8 @@ def main():
         events, measures, _, clicks = parse_part(part)
         if "measures" not in result:
             result["measures"] = [to_sec(m) for m in measures]
-            result["beats"] = [[to_sec(q), int(down)] for q, down in clicks]
+            result["beats"] = [[to_sec(q), kind] for q, kind in clicks if kind < 2]
+            result["subbeats"] = [to_sec(q) for q, kind in clicks if kind == 2]
         vocal = any(e[2] for e in events)
         result["parts"].append({"name": name, "channels": channels[part.get("id")], "vocal": vocal})
         if not vocal:

@@ -64,6 +64,11 @@ export interface PieceData {
 	 * pieces built before it was added.
 	 */
 	beats?: [t: number, downbeat: 0 | 1][];
+	/**
+	 * The times of the clicks between the beats: three per dotted beat, two per other beat. Missing
+	 * in pieces built before they were added.
+	 */
+	subbeats?: number[];
 	engravings: Engraving[];
 }
 
